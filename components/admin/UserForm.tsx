@@ -14,9 +14,10 @@ import type { Profile } from "@/types";
 
 interface UserFormProps {
   user?: Profile;
+  onSuccess?: () => void;
 }
 
-export function UserForm({ user }: UserFormProps) {
+export function UserForm({ user, onSuccess }: UserFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +55,7 @@ export function UserForm({ user }: UserFormProps) {
         throw new Error(data.error ?? "Failed to save user.");
       }
 
-      router.push("/admin/users");
+      onSuccess?.();
       router.refresh();
     } catch (err: any) {
       setError(err.message);
@@ -105,7 +106,7 @@ export function UserForm({ user }: UserFormProps) {
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting ? "Saving..." : user ? "Save Changes" : "Create User"}
         </Button>
-        <Button type="button" variant="outline" onClick={() => router.back()}>
+        <Button type="button" variant="outline" onClick={() => onSuccess?.()}>
           Cancel
         </Button>
       </div>

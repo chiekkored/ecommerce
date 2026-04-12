@@ -22,9 +22,10 @@ import type { Category, Listing, ListingPhoto } from "@/types";
 interface ListingFormProps {
   categories: Category[];
   listing?: Listing & { listing_photos: ListingPhoto[] };
+  onSuccess?: () => void;
 }
 
-export function ListingForm({ categories, listing }: ListingFormProps) {
+export function ListingForm({ categories, listing, onSuccess }: ListingFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<ListingPhoto[]>(
@@ -77,12 +78,12 @@ export function ListingForm({ categories, listing }: ListingFormProps) {
       return;
     }
 
-    router.push("/admin/listings");
+    onSuccess?.();
     router.refresh();
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5 max-w-2xl">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       <div className="space-y-1.5">
         <Label htmlFor="title">Title *</Label>
         <Input
@@ -167,7 +168,7 @@ export function ListingForm({ categories, listing }: ListingFormProps) {
         <Button type="submit" disabled={isSubmitting}>
           {isSubmitting ? "Saving..." : listing ? "Save Changes" : "Create Listing"}
         </Button>
-        <Button type="button" variant="outline" onClick={() => router.back()}>
+        <Button type="button" variant="outline" onClick={() => onSuccess?.()}>
           Cancel
         </Button>
       </div>
