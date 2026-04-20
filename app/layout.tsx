@@ -3,8 +3,12 @@ import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Shop",
-  description: "Browse our catalog and request items.",
+  title: "IT.SURA",
+  description: "Browse the IT.SURA catalog and request items.",
+  icons: {
+    icon: [{ url: "/itsura_logo.jpg", type: "image/jpeg", sizes: "150x150" }],
+    apple: [{ url: "/itsura_logo.jpg", type: "image/jpeg", sizes: "150x150" }],
+  },
 };
 
 export default function RootLayout({
@@ -13,10 +17,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className="h-full antialiased"
-    >
+    <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col font-sans">
         {children}
         <Toaster />

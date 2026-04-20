@@ -45,7 +45,8 @@ export async function middleware(request: NextRequest) {
     
     // Then, overwrite with refreshed cookies from the supabaseResponse
     supabaseResponse.cookies.getAll().forEach((cookie) => {
-      response.cookies.set(cookie.name, cookie.value, cookie.options);
+      const { name, value, ...options } = cookie;
+      response.cookies.set(name, value, options);
     });
     
     return response;

@@ -127,6 +127,8 @@ export type Database = {
           buyer_name: string;
           buyer_email: string | null;
           buyer_phone: string | null;
+          buyer_messenger: string | null;
+          buyer_instagram: string | null;
           quantity: number;
           message: string | null;
           status: "new" | "contacted" | "pending_payment" | "closed" | "cancelled";
@@ -140,6 +142,8 @@ export type Database = {
           buyer_name: string;
           buyer_email?: string | null;
           buyer_phone?: string | null;
+          buyer_messenger?: string | null;
+          buyer_instagram?: string | null;
           quantity?: number;
           message?: string | null;
           status?: "new" | "contacted" | "pending_payment" | "closed" | "cancelled";
@@ -153,6 +157,8 @@ export type Database = {
           buyer_name?: string;
           buyer_email?: string | null;
           buyer_phone?: string | null;
+          buyer_messenger?: string | null;
+          buyer_instagram?: string | null;
           quantity?: number;
           message?: string | null;
           status?: "new" | "contacted" | "pending_payment" | "closed" | "cancelled";

@@ -8,12 +8,27 @@ const bodySchema = orderRequestSchema.extend({
 });
 
 async function generateRequestCode(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const year = new Date().getFullYear();
-  const { count } = await supabase
-    .from("order_requests")
-    .select("*", { count: "exact", head: true });
-  const seq = String((count ?? 0) + 1).padStart(4, "0");
-  return `ORD-${year}-${seq}`;
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Excluded O, 0, I, 1, L for clarity
+  let code = "";
+  let isUnique = false;
+  let attempts = 0;
+
+  while (!isUnique && attempts < 10) {
+    code = Array.from({ length: 5 }, () => chars.charAt(Math.floor(Math.random() * chars.length))).join("");
+    
+    const { data } = await supabase
+      .from("order_requests")
+      .select("request_code")
+      .eq("request_code", code)
+      .maybeSingle();
+
+    if (!data) {
+      isUnique = true;
+    }
+    attempts++;
+  }
+
+  return code;
 }
 
 export async function POST(request: Request) {
@@ -28,8 +43,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const { listing_id, buyer_name, buyer_email, buyer_phone, quantity, message } =
-      parsed.data;
+    const { 
+      listing_id, 
+      buyer_name, 
+      buyer_email, 
+      buyer_phone, 
+      buyer_messenger,
+      buyer_instagram,
+      quantity, 
+      message 
+    } = parsed.data;
 
     const supabase = await createClient();
     const request_code = await generateRequestCode(supabase);
@@ -40,6 +63,8 @@ export async function POST(request: Request) {
       buyer_name,
       buyer_email: buyer_email || null,
       buyer_phone: buyer_phone || null,
+      buyer_messenger: buyer_messenger || null,
+      buyer_instagram: buyer_instagram || null,
       quantity,
       message: message || null,
       status: "new",

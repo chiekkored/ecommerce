@@ -215,8 +215,25 @@ export default function AdminOrdersPage() {
                     <div className="text-sm">
                       <p className="font-medium">{order.buyer_name}</p>
                       <p className="text-muted-foreground text-xs">
-                        {order.buyer_email ?? order.buyer_phone ?? "—"}
+                        {order.buyer_phone}
                       </p>
+                      <div className="flex flex-col gap-0.5 mt-1">
+                        {order.buyer_email && (
+                          <p className="text-[10px] bg-muted w-fit px-1 rounded text-muted-foreground">
+                            E: {order.buyer_email}
+                          </p>
+                        )}
+                        {order.buyer_messenger && (
+                          <p className="text-[10px] bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 w-fit px-1 rounded">
+                            M: {order.buyer_messenger}
+                          </p>
+                        )}
+                        {order.buyer_instagram && (
+                          <p className="text-[10px] bg-pink-50 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400 w-fit px-1 rounded">
+                            IG: {order.buyer_instagram}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell>{order.quantity}</TableCell>

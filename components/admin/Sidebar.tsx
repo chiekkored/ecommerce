@@ -6,6 +6,7 @@ import { LayoutDashboard, Package, ShoppingCart, Users, LogOut } from "lucide-re
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { BrandLogo } from "@/components/BrandLogo";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -36,7 +37,9 @@ export function Sidebar({ onClose, role }: SidebarProps) {
 
   return (
     <div className="flex flex-col h-full w-64 bg-white border-r">
-      <div className="h-14 flex items-center px-4 border-b font-semibold">It.Sura Admin Panel</div>
+      <div className="h-14 flex items-center px-4 border-b">
+        <BrandLogo size={32} suffix="Admin Panel" />
+      </div>
       <nav className="flex-1 px-2 py-4 space-y-1">
         {filteredNavItems.map(({ href, label, icon: Icon, exact }) => {
           const active = exact ? pathname === href : pathname.startsWith(href);
