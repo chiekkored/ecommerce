@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { userCreateSchema, userUpdateSchema } from "@/lib/validators/user";
 import type { Profile } from "@/types";
@@ -15,9 +16,10 @@ import type { Profile } from "@/types";
 interface UserFormProps {
   user?: Profile;
   onSuccess?: () => void;
+  formId?: string;
 }
 
-export function UserForm({ user, onSuccess }: UserFormProps) {
+export function UserForm({ user, onSuccess, formId }: UserFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
@@ -63,7 +65,7 @@ export function UserForm({ user, onSuccess }: UserFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-w-md">
+    <form id={formId} onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-w-md">
       {!user && (
         <>
           <div className="space-y-1.5">
@@ -73,7 +75,7 @@ export function UserForm({ user, onSuccess }: UserFormProps) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="password">Password *</Label>
-            <Input id="password" type="password" {...register("password")} />
+            <PasswordInput id="password" {...register("password")} />
             {errors.password && <p className="text-xs text-destructive">{errors.password.message as string}</p>}
           </div>
         </>
@@ -88,7 +90,7 @@ export function UserForm({ user, onSuccess }: UserFormProps) {
       <div className="space-y-1.5">
         <Label htmlFor="role">Role *</Label>
         <Select defaultValue={user?.role ?? "staff"} onValueChange={(val) => setValue("role", val)}>
-          <SelectTrigger>
+          <SelectTrigger className="w-full">
             <SelectValue placeholder="Select role" />
           </SelectTrigger>
           <SelectContent>
@@ -101,15 +103,6 @@ export function UserForm({ user, onSuccess }: UserFormProps) {
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
-
-      <div className="flex gap-3 pt-2">
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Saving..." : user ? "Save Changes" : "Create User"}
-        </Button>
-        <Button type="button" variant="outline" onClick={() => onSuccess?.()}>
-          Cancel
-        </Button>
-      </div>
     </form>
   );
 }

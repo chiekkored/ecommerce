@@ -36,7 +36,7 @@ export function Sidebar({ onClose, role }: SidebarProps) {
 
   return (
     <div className="flex flex-col h-full w-64 bg-white border-r">
-      <div className="h-14 flex items-center px-4 border-b font-semibold">Admin Panel</div>
+      <div className="h-14 flex items-center px-4 border-b font-semibold">It.Sura Admin Panel</div>
       <nav className="flex-1 px-2 py-4 space-y-1">
         {filteredNavItems.map(({ href, label, icon: Icon, exact }) => {
           const active = exact ? pathname === href : pathname.startsWith(href);

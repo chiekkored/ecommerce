@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   Table,
@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ButtonWithIcon } from "@/components/ui/button-with-icon";
 import { Plus, Pencil } from "lucide-react";
 import { DeleteListingButton } from "@/components/admin/DeleteListingButton";
 import {
@@ -20,59 +22,188 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
+  SheetFooter,
+  SheetClose,
 } from "@/components/ui/sheet";
 import { ListingForm } from "@/components/admin/ListingForm";
-import type { Listing, Category } from "@/types";
+import { TableSearchInput } from "@/components/admin/TableSearchInput";
+import { ADMIN_TABLE_PAGE_SIZE, type AdminTableQuery, type AdminTableResult } from "@/lib/admin-table";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
+import type { Listing, Category, ListingPhoto } from "@/types";
+
+const FORM_ID = "listing-form";
+
+type ListingWithCategory = Listing & {
+  categories: Pick<Category, "name"> | null;
+  listing_photos: ListingPhoto[];
+};
+
+async function getListingsPageData({
+  search,
+  page,
+  pageSize,
+}: AdminTableQuery): Promise<AdminTableResult<ListingWithCategory> & { categories: Category[] }> {
+  const supabase = createClient();
+
+  let listingsQuery = supabase
+    .from("listings")
+    .select("*, categories(name), listing_photos(*)", { count: "exact" })
+    .order("created_at", { ascending: false });
+
+  const normalizedSearch = search.trim();
+  if (normalizedSearch) {
+    listingsQuery = listingsQuery.ilike("title", `%${normalizedSearch}%`);
+  }
+
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data: listingsData, count } = await listingsQuery.range(from, to);
+  const { data: categoriesData } = await supabase.from("categories").select("*");
+
+  return {
+    rows: ((listingsData ?? []) as ListingWithCategory[]),
+    total: count ?? 0,
+    categories: categoriesData ?? [],
+  };
+}
 
 export default function AdminListingsPage() {
-  const [listings, setListings] = useState<Listing[]>([]);
+  const [listings, setListings] = useState<ListingWithCategory[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [editingListing, setEditingListing] = useState<Listing | null>(null);
+  const [editingListing, setEditingListing] = useState<ListingWithCategory | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [, setTotal] = useState(0);
+  const [hasListings, setHasListings] = useState(false);
+  const debouncedSearch = useDebouncedValue(search);
 
-  const fetchData = async () => {
-    const supabase = createClient();
-    const { data: listingsData } = await supabase
-      .from("listings")
-      .select("*, categories(name)")
-      .order("created_at", { ascending: false });
-    const { data: categoriesData } = await supabase.from("categories").select("*");
-    setListings((listingsData as any) ?? []);
-    setCategories(categoriesData ?? []);
-  };
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    const { rows, total, categories } = await getListingsPageData({
+      search: debouncedSearch,
+      page,
+      pageSize: ADMIN_TABLE_PAGE_SIZE,
+    });
+    setListings(rows);
+    setCategories(categories);
+    setTotal(total);
+    if (!debouncedSearch.trim()) {
+      setHasListings(total > 0);
+    }
+    setIsLoading(false);
+  }, [debouncedSearch, page]);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    let isCurrent = true;
+
+    const loadData = async () => {
+      const { rows, total, categories } = await getListingsPageData({
+        search: debouncedSearch,
+        page,
+        pageSize: ADMIN_TABLE_PAGE_SIZE,
+      });
+
+      if (!isCurrent) return;
+
+      setListings(rows);
+      setCategories(categories);
+      setTotal(total);
+      if (!debouncedSearch.trim()) {
+        setHasListings(total > 0);
+      }
+      setIsLoading(false);
+    };
+
+    loadData();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [debouncedSearch, page]);
+
+  const hasSearch = Boolean(debouncedSearch.trim());
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-semibold">Listings</h1>
-        <Sheet open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if(!open) setEditingListing(null); }}>
-          <SheetTrigger asChild>
-            <Button size="sm" onClick={() => setEditingListing(null)}>
-              <Plus className="h-4 w-4 mr-1" /> New Listing
-            </Button>
-          </SheetTrigger>
-          <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
-            <SheetHeader className="px-6 pt-6">
-              <SheetTitle>{editingListing ? "Edit Listing" : "New Listing"}</SheetTitle>
-            </SheetHeader>
-            <div className="p-6">
-              <ListingForm 
-                categories={categories} 
-                listing={editingListing ?? undefined} 
-                onSuccess={() => { setIsSheetOpen(false); fetchData(); }} 
-              />
-            </div>
-          </SheetContent>
-        </Sheet>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <TableSearchInput
+            value={search}
+            onChange={(event) => {
+              setIsLoading(true);
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+            placeholder="Search listings..."
+            aria-label="Search listings"
+          />
+          <Sheet open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if(!open) setEditingListing(null); }}>
+            <SheetTrigger asChild>
+              <ButtonWithIcon icon={Plus} onClick={() => setEditingListing(null)}>
+                New Listing
+              </ButtonWithIcon>
+            </SheetTrigger>
+            <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
+              <SheetHeader className="px-6 pt-6">
+                <SheetTitle>{editingListing ? "Edit Listing" : "New Listing"}</SheetTitle>
+              </SheetHeader>
+              <div className="p-6">
+                <ListingForm 
+                  categories={categories} 
+                  listing={editingListing ?? undefined} 
+                  onSuccess={() => { setIsSheetOpen(false); fetchData(); }} 
+                  formId={FORM_ID}
+                />
+              </div>
+              <SheetFooter className="px-6 pb-6">
+                <SheetClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </SheetClose>
+                <Button type="submit" form={FORM_ID}>
+                  {editingListing ? "Save Changes" : "Create Listing"}
+                </Button>
+              </SheetFooter>
+            </SheetContent>
+          </Sheet>
+        </div>
       </div>
 
-      {!listings?.length ? (
+      {isLoading ? (
+        <div className="border rounded-lg overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Title</TableHead>
+                <TableHead>Price</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-24">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell><Skeleton className="h-5 w-40" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Skeleton className="h-8 w-8 rounded-md" />
+                      <Skeleton className="h-8 w-8 rounded-md" />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : !listings?.length ? (
         <p className="text-muted-foreground text-sm py-8 text-center">
-          No listings yet.
+          {hasSearch && hasListings ? "No listings match your search." : "No listings yet."}
         </p>
       ) : (
         <div className="border rounded-lg overflow-hidden">
@@ -87,7 +218,7 @@ export default function AdminListingsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {listings.map((listing: any) => (
+              {listings.map((listing) => (
                 <TableRow key={listing.id}>
                   <TableCell className="font-medium">{listing.title}</TableCell>
                   <TableCell>₱{listing.price.toLocaleString()}</TableCell>

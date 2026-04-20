@@ -48,7 +48,6 @@ export function AdminShell({ children }: { children: ReactNode }) {
           <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
-          <span className="font-medium text-sm text-muted-foreground">Admin</span>
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
