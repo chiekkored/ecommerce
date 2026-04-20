@@ -40,7 +40,10 @@ export async function PUT(request: Request, { params }: Context) {
   // Sync inventory
   if (inventory) {
     // Simple sync: delete existing and re-insert (for simplicity in this flow)
-    await supabase.from("listing_inventory").delete().eq("listing_id", id);
+    const { error: deleteInventoryError } = await supabase.from("listing_inventory").delete().eq("listing_id", id);
+    if (deleteInventoryError) {
+      return NextResponse.json({ error: deleteInventoryError.message }, { status: 500 });
+    }
     
     if (inventory.length > 0) {
       const inventoryData = inventory.map(item => ({
@@ -54,7 +57,7 @@ export async function PUT(request: Request, { params }: Context) {
         .insert(inventoryData);
 
       if (inventoryError) {
-        console.error("Inventory update error:", inventoryError);
+        return NextResponse.json({ error: inventoryError.message }, { status: 500 });
       }
     }
   }

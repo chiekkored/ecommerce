@@ -80,6 +80,9 @@ export function ListingForm({
   });
 
   const inventory = watch("inventory") || [];
+  const setInventory = (nextInventory: ListingFormValues["inventory"]) => {
+    setValue("inventory", nextInventory, { shouldDirty: true, shouldValidate: true });
+  };
 
   useEffect(() => {
     pendingPhotosRef.current = pendingPhotos;
@@ -92,11 +95,11 @@ export function ListingForm({
   }, []);
 
   const addInventoryItem = () => {
-    setValue("inventory", [...inventory, { size: "", quantity: 1 }]);
+    setInventory([...inventory, { size: "", quantity: 1 }]);
   };
 
   const removeInventoryItem = (index: number) => {
-    setValue("inventory", inventory.filter((_, i) => i !== index));
+    setInventory(inventory.filter((_, i) => i !== index));
   };
 
   const autoSlug = (title: string) =>
@@ -271,7 +274,7 @@ export function ListingForm({
                 onValueChange={(val) => {
                   const newInventory = [...inventory];
                   newInventory[index].size = val;
-                  setValue("inventory", newInventory);
+                  setInventory(newInventory);
                 }}
               >
                 <SelectTrigger className="h-9">
@@ -298,7 +301,7 @@ export function ListingForm({
                 onChange={(e) => {
                   const newInventory = [...inventory];
                   newInventory[index].quantity = parseInt(e.target.value) || 0;
-                  setValue("inventory", newInventory);
+                  setInventory(newInventory);
                 }}
               />
             </div>

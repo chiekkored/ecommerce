@@ -46,8 +46,8 @@ export async function POST(request: Request) {
       .insert(inventoryData);
 
     if (inventoryError) {
-      // Rollback listing insert or just log
-      console.error("Inventory error:", inventoryError);
+      await supabase.from("listings").delete().eq("id", listing.id);
+      return NextResponse.json({ error: inventoryError.message }, { status: 500 });
     }
   }
 

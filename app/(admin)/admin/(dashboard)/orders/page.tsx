@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { UpdateOrderStatusModal } from "@/components/admin/UpdateOrderStatusModal";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { TableSearchInput } from "@/components/admin/TableSearchInput";
 import { ADMIN_TABLE_PAGE_SIZE, type AdminTableQuery, type AdminTableResult } from "@/lib/admin-table";
@@ -52,6 +53,37 @@ function DetailItem({ label, children }: { label: string; children: React.ReactN
       <div className="text-sm text-foreground">{children}</div>
     </div>
   );
+}
+
+function DetailLink({ href, children, external = true }: { href: string; children: React.ReactNode; external?: boolean }) {
+  return (
+    <a
+      href={href}
+      target={external ? "_blank" : undefined}
+      rel={external ? "noreferrer" : undefined}
+      className="font-medium text-primary underline-offset-4 hover:underline"
+    >
+      {children}
+    </a>
+  );
+}
+
+function normalizePhoneHref(phone: string) {
+  return `tel:${phone.replace(/[^\d+]/g, "")}`;
+}
+
+function normalizeMessengerHref(value: string) {
+  const trimmed = value.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^(m\.me|messenger\.com|facebook\.com)\//i.test(trimmed)) return `https://${trimmed}`;
+  if (!trimmed.includes(" ")) return `https://m.me/${trimmed.replace(/^@/, "")}`;
+  return `https://www.facebook.com/search/top?q=${encodeURIComponent(trimmed)}`;
+}
+
+function normalizeInstagramHref(value: string) {
+  const trimmed = value.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://www.instagram.com/${trimmed.replace(/^@/, "")}`;
 }
 
 async function getOrdersPageData({ search, page, pageSize }: AdminTableQuery): Promise<AdminTableResult<OrderRow>> {
@@ -333,51 +365,101 @@ export default function AdminOrdersPage() {
                 <Badge variant={getStatusVariant(selectedOrder.status as OrderStatus)}>
                   {statusLabels[selectedOrder.status as OrderStatus]}
                 </Badge>
+                {selectedOrder.size && <Badge variant="secondary">Size {selectedOrder.size}</Badge>}
                 <Badge variant="outline">Qty {selectedOrder.quantity}</Badge>
               </div>
 
-              <section className="space-y-4">
-                <h3 className="text-sm font-semibold">Item</h3>
-                <DetailItem label="Name">
-                  {selectedOrder.listings?.title ?? <span className="text-muted-foreground">—</span>}
-                </DetailItem>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <DetailItem label="Price">
-                    {selectedOrder.listings?.price != null ? `₱${selectedOrder.listings.price.toLocaleString()}` : "—"}
+              <Card size="sm">
+                <CardHeader>
+                  <CardTitle>Item</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <DetailItem label="Name">
+                    {selectedOrder.listings?.title ?? <span className="text-muted-foreground">—</span>}
                   </DetailItem>
-                  <DetailItem label="Size">{selectedOrder.listings?.size ?? "—"}</DetailItem>
-                </div>
-                <DetailItem label="Slug">{selectedOrder.listings?.slug ?? "—"}</DetailItem>
-              </section>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <DetailItem label="Price">
+                      {selectedOrder.listings?.price != null
+                        ? `₱${selectedOrder.listings.price.toLocaleString()}`
+                        : "—"}
+                    </DetailItem>
+                    <DetailItem label="Slug">{selectedOrder.listings?.slug ?? "—"}</DetailItem>
+                  </div>
+                </CardContent>
+              </Card>
 
-              <section className="space-y-4">
-                <h3 className="text-sm font-semibold">Buyer</h3>
-                <DetailItem label="Name">{selectedOrder.buyer_name}</DetailItem>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <DetailItem label="Phone">{selectedOrder.buyer_phone ?? "—"}</DetailItem>
-                  <DetailItem label="Email">{selectedOrder.buyer_email ?? "—"}</DetailItem>
-                  <DetailItem label="Messenger">{selectedOrder.buyer_messenger ?? "—"}</DetailItem>
-                  <DetailItem label="Instagram">{selectedOrder.buyer_instagram ?? "—"}</DetailItem>
-                </div>
-              </section>
+              <Card size="sm">
+                <CardHeader>
+                  <CardTitle>Buyer</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <DetailItem label="Name">{selectedOrder.buyer_name}</DetailItem>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <DetailItem label="Phone">
+                      {selectedOrder.buyer_phone ? (
+                        <DetailLink href={normalizePhoneHref(selectedOrder.buyer_phone)} external={false}>
+                          {selectedOrder.buyer_phone}
+                        </DetailLink>
+                      ) : (
+                        "—"
+                      )}
+                    </DetailItem>
+                    <DetailItem label="Email">
+                      {selectedOrder.buyer_email ? (
+                        <DetailLink href={`mailto:${selectedOrder.buyer_email}`} external={false}>
+                          {selectedOrder.buyer_email}
+                        </DetailLink>
+                      ) : (
+                        "—"
+                      )}
+                    </DetailItem>
+                    <DetailItem label="Messenger">
+                      {selectedOrder.buyer_messenger ? (
+                        <DetailLink href={normalizeMessengerHref(selectedOrder.buyer_messenger)}>
+                          {selectedOrder.buyer_messenger}
+                        </DetailLink>
+                      ) : (
+                        "—"
+                      )}
+                    </DetailItem>
+                    <DetailItem label="Instagram">
+                      {selectedOrder.buyer_instagram ? (
+                        <DetailLink href={normalizeInstagramHref(selectedOrder.buyer_instagram)}>
+                          {selectedOrder.buyer_instagram}
+                        </DetailLink>
+                      ) : (
+                        "—"
+                      )}
+                    </DetailItem>
+                  </div>
+                </CardContent>
+              </Card>
 
-              <section className="space-y-4">
-                <h3 className="text-sm font-semibold">Request</h3>
-                <DetailItem label="Message">
-                  {selectedOrder.message ? (
-                    <p className="whitespace-pre-line leading-relaxed">{selectedOrder.message}</p>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </DetailItem>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <DetailItem label="Created">{formatDate(selectedOrder.created_at)}</DetailItem>
-                  <DetailItem label="Updated">{formatDate(selectedOrder.updated_at)}</DetailItem>
-                </div>
-                <DetailItem label="Order ID">
-                  <span className="font-mono text-xs">{selectedOrder.id}</span>
-                </DetailItem>
-              </section>
+              <Card size="sm">
+                <CardHeader>
+                  <CardTitle>Request</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <DetailItem label="Size">{selectedOrder.size ?? "—"}</DetailItem>
+                    <DetailItem label="Quantity">{selectedOrder.quantity}</DetailItem>
+                  </div>
+                  <DetailItem label="Message">
+                    {selectedOrder.message ? (
+                      <p className="whitespace-pre-line leading-relaxed">{selectedOrder.message}</p>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </DetailItem>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <DetailItem label="Created">{formatDate(selectedOrder.created_at)}</DetailItem>
+                    <DetailItem label="Updated">{formatDate(selectedOrder.updated_at)}</DetailItem>
+                  </div>
+                  <DetailItem label="Order ID">
+                    <span className="font-mono text-xs">{selectedOrder.id}</span>
+                  </DetailItem>
+                </CardContent>
+              </Card>
             </div>
           )}
         </SheetContent>

@@ -58,6 +58,33 @@ export async function POST(request: Request) {
     const supabase = await createClient();
     const request_code = await generateRequestCode(supabase);
 
+    const { data: inventoryItem, error: inventoryError } = await supabase
+      .from("listing_inventory")
+      .select("quantity")
+      .eq("listing_id", listing_id)
+      .eq("size", size)
+      .maybeSingle();
+
+    if (inventoryError) {
+      console.error("Inventory lookup error:", inventoryError);
+      return NextResponse.json({ error: inventoryError.message }, { status: 500 });
+    }
+
+    if (!inventoryItem) {
+      return NextResponse.json({ error: "Selected size is not available for this item." }, { status: 400 });
+    }
+
+    if (inventoryItem.quantity <= 0) {
+      return NextResponse.json({ error: "Selected size is out of stock." }, { status: 400 });
+    }
+
+    if (quantity > inventoryItem.quantity) {
+      return NextResponse.json(
+        { error: `Only ${inventoryItem.quantity} available for size ${size}.` },
+        { status: 400 },
+      );
+    }
+
     const { error } = await supabase.from("order_requests").insert({
       request_code,
       listing_id,
@@ -74,11 +101,12 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error("Order insert error:", error);
-      return NextResponse.json({ error: "Failed to submit request." }, { status: 500 });
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ request_code }, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Internal server error." }, { status: 500 });
+  } catch (error) {
+    console.error("Order request error:", error);
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Internal server error." }, { status: 500 });
   }
 }
