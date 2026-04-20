@@ -16,9 +16,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const { category_id, size, description, ...rest } = parsed.data;
+  const { category_id, size, inventory, description, ...rest } = parsed.data;
 
-  const { data, error } = await supabase
+  const { data: listing, error: listingError } = await supabase
     .from("listings")
     .insert({
       ...rest,
@@ -30,9 +30,26 @@ export async function POST(request: Request) {
     .select()
     .single();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (listingError) {
+    return NextResponse.json({ error: listingError.message }, { status: 500 });
   }
 
-  return NextResponse.json(data, { status: 201 });
+  if (inventory && inventory.length > 0) {
+    const inventoryData = inventory.map(item => ({
+      listing_id: listing.id,
+      size: item.size,
+      quantity: item.quantity,
+    }));
+
+    const { error: inventoryError } = await supabase
+      .from("listing_inventory")
+      .insert(inventoryData);
+
+    if (inventoryError) {
+      // Rollback listing insert or just log
+      console.error("Inventory error:", inventoryError);
+    }
+  }
+
+  return NextResponse.json(listing, { status: 201 });
 }

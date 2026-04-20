@@ -50,6 +50,7 @@ export async function POST(request: Request) {
       buyer_phone, 
       buyer_messenger,
       buyer_instagram,
+      size,
       quantity, 
       message 
     } = parsed.data;
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
       buyer_phone: buyer_phone || null,
       buyer_messenger: buyer_messenger || null,
       buyer_instagram: buyer_instagram || null,
+      size: size || null,
       quantity,
       message: message || null,
       status: "new",

@@ -2,24 +2,18 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { UpdateOrderStatusModal } from "@/components/admin/UpdateOrderStatusModal";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { TableSearchInput } from "@/components/admin/TableSearchInput";
 import { ADMIN_TABLE_PAGE_SIZE, type AdminTableQuery, type AdminTableResult } from "@/lib/admin-table";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import type { OrderStatus, OrderRequest, Listing } from "@/types";
 
 type OrderRow = OrderRequest & {
-  listings: Pick<Listing, "title"> | null;
+  listings: Pick<Listing, "id" | "title" | "slug" | "price" | "size"> | null;
 };
 
 const getStatusVariant = (status: OrderStatus): "default" | "secondary" | "destructive" | "outline" => {
@@ -39,11 +33,28 @@ const getStatusVariant = (status: OrderStatus): "default" | "secondary" | "destr
   }
 };
 
-async function getOrdersPageData({
-  search,
-  page,
-  pageSize,
-}: AdminTableQuery): Promise<AdminTableResult<OrderRow>> {
+const statusLabels: Record<OrderStatus, string> = {
+  new: "New",
+  contacted: "Contacted",
+  pending_payment: "Pending Payment",
+  closed: "Closed",
+  cancelled: "Cancelled",
+};
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleString();
+}
+
+function DetailItem({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <div className="text-sm text-foreground">{children}</div>
+    </div>
+  );
+}
+
+async function getOrdersPageData({ search, page, pageSize }: AdminTableQuery): Promise<AdminTableResult<OrderRow>> {
   const supabase = createClient();
   const normalizedSearch = search.trim();
   let matchingListingIds: string[] = [];
@@ -58,13 +69,13 @@ async function getOrdersPageData({
 
   let ordersQuery = supabase
     .from("order_requests")
-    .select("*, listings(title)", { count: "exact" })
+    .select("*, listings(id, title, slug, price, size)", { count: "exact" })
     .order("created_at", { ascending: false });
 
   if (normalizedSearch) {
     if (matchingListingIds.length) {
       ordersQuery = ordersQuery.or(
-        `request_code.ilike.%${normalizedSearch}%,listing_id.in.(${matchingListingIds.join(",")})`
+        `request_code.ilike.%${normalizedSearch}%,listing_id.in.(${matchingListingIds.join(",")})`,
       );
     } else {
       ordersQuery = ordersQuery.ilike("request_code", `%${normalizedSearch}%`);
@@ -88,6 +99,8 @@ export default function AdminOrdersPage() {
   const [page, setPage] = useState(1);
   const [, setTotal] = useState(0);
   const [hasOrders, setHasOrders] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
+  const [isDetailsSheetOpen, setIsDetailsSheetOpen] = useState(false);
   const debouncedSearch = useDebouncedValue(search);
 
   const fetchOrders = useCallback(async () => {
@@ -134,6 +147,11 @@ export default function AdminOrdersPage() {
 
   const hasSearch = Boolean(debouncedSearch.trim());
 
+  const openOrderDetails = (order: OrderRow) => {
+    setSelectedOrder(order);
+    setIsDetailsSheetOpen(true);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -149,7 +167,7 @@ export default function AdminOrdersPage() {
           aria-label="Search orders"
         />
       </div>
-      
+
       {isLoading ? (
         <div className="border rounded-lg overflow-hidden">
           <Table>
@@ -167,17 +185,27 @@ export default function AdminOrdersPage() {
             <TableBody>
               {Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell><Skeleton className="h-4 w-12" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-12" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-40" />
+                  </TableCell>
                   <TableCell>
                     <div className="space-y-1">
                       <Skeleton className="h-4 w-32" />
                       <Skeleton className="h-3 w-48" />
                     </div>
                   </TableCell>
-                  <TableCell><Skeleton className="h-4 w-8" /></TableCell>
-                  <TableCell><Skeleton className="h-6 w-24 rounded-full" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-8" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-6 w-24 rounded-full" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-20" />
+                  </TableCell>
                   <TableCell className="text-right">
                     <Skeleton className="h-8 w-8 ml-auto rounded-md" />
                   </TableCell>
@@ -206,17 +234,32 @@ export default function AdminOrdersPage() {
             </TableHeader>
             <TableBody>
               {orders.map((order) => (
-                <TableRow key={order.id}>
+                <TableRow
+                  key={order.id}
+                  role="button"
+                  tabIndex={0}
+                  className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  onClick={() => openOrderDetails(order)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openOrderDetails(order);
+                    }
+                  }}
+                >
                   <TableCell className="font-mono text-xs">{order.request_code}</TableCell>
-                  <TableCell className="max-w-[180px] truncate">
-                    {order.listings?.title ?? <span className="text-muted-foreground">—</span>}
+                  <TableCell className="max-w-[180px]">
+                    <div className="space-y-0.5">
+                      <p className="font-medium truncate">{order.listings?.title ?? <span className="text-muted-foreground">—</span>}</p>
+                      {order.size && (
+                        <Badge variant="secondary" className="text-[10px] h-4">Size: {order.size}</Badge>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="text-sm">
                       <p className="font-medium">{order.buyer_name}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {order.buyer_phone}
-                      </p>
+                      <p className="text-muted-foreground text-xs">{order.buyer_phone}</p>
                       <div className="flex flex-col gap-0.5 mt-1">
                         {order.buyer_email && (
                           <p className="text-[10px] bg-muted w-fit px-1 rounded text-muted-foreground">
@@ -239,20 +282,22 @@ export default function AdminOrdersPage() {
                   <TableCell>{order.quantity}</TableCell>
                   <TableCell>
                     <Badge variant={getStatusVariant(order.status as OrderStatus)}>
-                      {order.status.replace("_", " ")}
+                      {statusLabels[order.status as OrderStatus]}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {new Date(order.created_at).toLocaleDateString()}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <UpdateOrderStatusModal
-                      orderId={order.id}
-                      requestCode={order.request_code}
-                      itemName={order.listings?.title ?? "Unknown Item"}
-                      currentStatus={order.status as OrderStatus}
-                      onSuccess={fetchOrders}
-                    />
+                  <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
+                    <div onKeyDown={(event) => event.stopPropagation()}>
+                      <UpdateOrderStatusModal
+                        orderId={order.id}
+                        requestCode={order.request_code}
+                        itemName={order.listings?.title ?? "Unknown Item"}
+                        currentStatus={order.status as OrderStatus}
+                        onSuccess={fetchOrders}
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -260,6 +305,83 @@ export default function AdminOrdersPage() {
           </Table>
         </div>
       )}
+
+      <Sheet
+        open={isDetailsSheetOpen}
+        onOpenChange={(open) => {
+          setIsDetailsSheetOpen(open);
+          if (!open) setSelectedOrder(null);
+        }}
+      >
+        <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
+          <SheetHeader className="px-6 pt-6">
+            <SheetTitle>{selectedOrder ? `Order ${selectedOrder.request_code}` : "Order Details"}</SheetTitle>
+          </SheetHeader>
+          {selectedOrder && (
+            <div className="space-y-6 px-6 pb-6">
+              <div className="flex flex-wrap items-center gap-2">
+                <UpdateOrderStatusModal
+                  orderId={selectedOrder.id}
+                  requestCode={selectedOrder.request_code}
+                  itemName={selectedOrder.listings?.title ?? "Unknown Item"}
+                  currentStatus={selectedOrder.status as OrderStatus}
+                  onSuccess={() => {
+                    setIsDetailsSheetOpen(false);
+                    fetchOrders();
+                  }}
+                />
+                <Badge variant={getStatusVariant(selectedOrder.status as OrderStatus)}>
+                  {statusLabels[selectedOrder.status as OrderStatus]}
+                </Badge>
+                <Badge variant="outline">Qty {selectedOrder.quantity}</Badge>
+              </div>
+
+              <section className="space-y-4">
+                <h3 className="text-sm font-semibold">Item</h3>
+                <DetailItem label="Name">
+                  {selectedOrder.listings?.title ?? <span className="text-muted-foreground">—</span>}
+                </DetailItem>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <DetailItem label="Price">
+                    {selectedOrder.listings?.price != null ? `₱${selectedOrder.listings.price.toLocaleString()}` : "—"}
+                  </DetailItem>
+                  <DetailItem label="Size">{selectedOrder.listings?.size ?? "—"}</DetailItem>
+                </div>
+                <DetailItem label="Slug">{selectedOrder.listings?.slug ?? "—"}</DetailItem>
+              </section>
+
+              <section className="space-y-4">
+                <h3 className="text-sm font-semibold">Buyer</h3>
+                <DetailItem label="Name">{selectedOrder.buyer_name}</DetailItem>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <DetailItem label="Phone">{selectedOrder.buyer_phone ?? "—"}</DetailItem>
+                  <DetailItem label="Email">{selectedOrder.buyer_email ?? "—"}</DetailItem>
+                  <DetailItem label="Messenger">{selectedOrder.buyer_messenger ?? "—"}</DetailItem>
+                  <DetailItem label="Instagram">{selectedOrder.buyer_instagram ?? "—"}</DetailItem>
+                </div>
+              </section>
+
+              <section className="space-y-4">
+                <h3 className="text-sm font-semibold">Request</h3>
+                <DetailItem label="Message">
+                  {selectedOrder.message ? (
+                    <p className="whitespace-pre-line leading-relaxed">{selectedOrder.message}</p>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </DetailItem>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <DetailItem label="Created">{formatDate(selectedOrder.created_at)}</DetailItem>
+                  <DetailItem label="Updated">{formatDate(selectedOrder.updated_at)}</DetailItem>
+                </div>
+                <DetailItem label="Order ID">
+                  <span className="font-mono text-xs">{selectedOrder.id}</span>
+                </DetailItem>
+              </section>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

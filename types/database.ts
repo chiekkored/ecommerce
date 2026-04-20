@@ -119,6 +119,32 @@ export type Database = {
         };
         Relationships: [];
       };
+      listing_inventory: {
+        Row: {
+          id: string;
+          listing_id: string;
+          size: string;
+          quantity: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          listing_id: string;
+          size: string;
+          quantity?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          listing_id?: string;
+          size?: string;
+          quantity?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       order_requests: {
         Row: {
           id: string;
@@ -129,6 +155,7 @@ export type Database = {
           buyer_phone: string | null;
           buyer_messenger: string | null;
           buyer_instagram: string | null;
+          size: string | null;
           quantity: number;
           message: string | null;
           status: "new" | "contacted" | "pending_payment" | "closed" | "cancelled";
@@ -144,6 +171,7 @@ export type Database = {
           buyer_phone?: string | null;
           buyer_messenger?: string | null;
           buyer_instagram?: string | null;
+          size?: string | null;
           quantity?: number;
           message?: string | null;
           status?: "new" | "contacted" | "pending_payment" | "closed" | "cancelled";
@@ -159,6 +187,7 @@ export type Database = {
           buyer_phone?: string | null;
           buyer_messenger?: string | null;
           buyer_instagram?: string | null;
+          size?: string | null;
           quantity?: number;
           message?: string | null;
           status?: "new" | "contacted" | "pending_payment" | "closed" | "cancelled";
@@ -184,6 +213,7 @@ export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type Category = Database["public"]["Tables"]["categories"]["Row"];
 export type Listing = Database["public"]["Tables"]["listings"]["Row"];
 export type ListingPhoto = Database["public"]["Tables"]["listing_photos"]["Row"];
+export type ListingInventory = Database["public"]["Tables"]["listing_inventory"]["Row"];
 export type OrderRequest = Database["public"]["Tables"]["order_requests"]["Row"];
 
 export type OrderStatus = OrderRequest["status"];
@@ -191,6 +221,7 @@ export type OrderStatus = OrderRequest["status"];
 // Joined types used in queries
 export type ListingWithPhotos = Listing & {
   listing_photos: ListingPhoto[];
+  listing_inventory: ListingInventory[];
   categories: Category | null;
 };
 

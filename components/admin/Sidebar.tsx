@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Package, ShoppingCart, Users, LogOut } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingCart, Tags, Users, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -11,6 +11,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/admin/listings", label: "Listings", icon: Package, exact: false },
+  { href: "/admin/categories", label: "Categories", icon: Tags, exact: false },
   { href: "/admin/orders", label: "Orders", icon: ShoppingCart, exact: false },
   { href: "/admin/users", label: "Users", icon: Users, exact: false },
 ];

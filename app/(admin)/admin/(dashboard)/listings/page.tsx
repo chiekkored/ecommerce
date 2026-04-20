@@ -26,17 +26,32 @@ import {
   SheetClose,
 } from "@/components/ui/sheet";
 import { ListingForm } from "@/components/admin/ListingForm";
+import { ImageCarousel } from "@/components/catalog/ImageCarousel";
 import { TableSearchInput } from "@/components/admin/TableSearchInput";
 import { ADMIN_TABLE_PAGE_SIZE, type AdminTableQuery, type AdminTableResult } from "@/lib/admin-table";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
-import type { Listing, Category, ListingPhoto } from "@/types";
+import type { Listing, Category, ListingPhoto, ListingInventory } from "@/types";
 
 const FORM_ID = "listing-form";
 
 type ListingWithCategory = Listing & {
   categories: Pick<Category, "name"> | null;
   listing_photos: ListingPhoto[];
+  listing_inventory: ListingInventory[];
 };
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleString();
+}
+
+function DetailItem({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <div className="text-sm text-foreground">{children}</div>
+    </div>
+  );
+}
 
 async function getListingsPageData({
   search,
@@ -47,7 +62,7 @@ async function getListingsPageData({
 
   let listingsQuery = supabase
     .from("listings")
-    .select("*, categories(name), listing_photos(*)", { count: "exact" })
+    .select("*, categories(name), listing_photos(*), listing_inventory(*)", { count: "exact" })
     .order("created_at", { ascending: false });
 
   const normalizedSearch = search.trim();
@@ -58,7 +73,7 @@ async function getListingsPageData({
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   const { data: listingsData, count } = await listingsQuery.range(from, to);
-  const { data: categoriesData } = await supabase.from("categories").select("*");
+  const { data: categoriesData } = await supabase.from("categories").select("*").order("name");
 
   return {
     rows: ((listingsData ?? []) as ListingWithCategory[]),
@@ -72,6 +87,10 @@ export default function AdminListingsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [editingListing, setEditingListing] = useState<ListingWithCategory | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [isNewListingCreated, setIsNewListingCreated] = useState(false);
+  const [isListingSubmitting, setIsListingSubmitting] = useState(false);
+  const [selectedListing, setSelectedListing] = useState<ListingWithCategory | null>(null);
+  const [isDetailsSheetOpen, setIsDetailsSheetOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -124,6 +143,14 @@ export default function AdminListingsPage() {
   }, [debouncedSearch, page]);
 
   const hasSearch = Boolean(debouncedSearch.trim());
+  const selectedListingPhotos = selectedListing
+    ? [...(selectedListing.listing_photos ?? [])].sort((a, b) => a.sort_order - b.sort_order)
+    : [];
+
+  const openListingDetails = (listing: ListingWithCategory) => {
+    setSelectedListing(listing);
+    setIsDetailsSheetOpen(true);
+  };
 
   return (
     <div className="space-y-4">
@@ -140,9 +167,27 @@ export default function AdminListingsPage() {
             placeholder="Search listings..."
             aria-label="Search listings"
           />
-          <Sheet open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if(!open) setEditingListing(null); }}>
+          <Sheet
+            open={isSheetOpen}
+            onOpenChange={(open) => {
+              if (!open && isListingSubmitting) return;
+              setIsSheetOpen(open);
+              if (!open) {
+                setEditingListing(null);
+                setIsNewListingCreated(false);
+                setIsListingSubmitting(false);
+              }
+            }}
+          >
             <SheetTrigger asChild>
-              <ButtonWithIcon icon={Plus} onClick={() => setEditingListing(null)}>
+              <ButtonWithIcon
+                icon={Plus}
+                onClick={() => {
+                  setEditingListing(null);
+                  setIsNewListingCreated(false);
+                  setIsListingSubmitting(false);
+                }}
+              >
                 New Listing
               </ButtonWithIcon>
             </SheetTrigger>
@@ -154,16 +199,27 @@ export default function AdminListingsPage() {
                 <ListingForm 
                   categories={categories} 
                   listing={editingListing ?? undefined} 
-                  onSuccess={() => { setIsSheetOpen(false); fetchData(); }} 
+                  onCreated={() => setIsNewListingCreated(true)}
+                  onSubmittingChange={setIsListingSubmitting}
+                  onSuccess={() => {
+                    setIsSheetOpen(false);
+                    fetchData();
+                  }}
                   formId={FORM_ID}
                 />
               </div>
               <SheetFooter className="px-6 pb-6">
                 <SheetClose asChild>
-                  <Button variant="outline">Cancel</Button>
+                  <Button variant="outline" disabled={isListingSubmitting}>Cancel</Button>
                 </SheetClose>
-                <Button type="submit" form={FORM_ID}>
-                  {editingListing ? "Save Changes" : "Create Listing"}
+                <Button type="submit" form={FORM_ID} disabled={isListingSubmitting}>
+                  {isListingSubmitting
+                    ? editingListing || isNewListingCreated
+                      ? "Saving..."
+                      : "Creating..."
+                    : editingListing || isNewListingCreated
+                      ? "Save Changes"
+                      : "Create Listing"}
                 </Button>
               </SheetFooter>
             </SheetContent>
@@ -219,7 +275,19 @@ export default function AdminListingsPage() {
             </TableHeader>
             <TableBody>
               {listings.map((listing) => (
-                <TableRow key={listing.id}>
+                <TableRow
+                  key={listing.id}
+                  role="button"
+                  tabIndex={0}
+                  className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  onClick={() => openListingDetails(listing)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openListingDetails(listing);
+                    }
+                  }}
+                >
                   <TableCell className="font-medium">{listing.title}</TableCell>
                   <TableCell>₱{listing.price.toLocaleString()}</TableCell>
                   <TableCell>
@@ -233,7 +301,11 @@ export default function AdminListingsPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1">
+                    <div
+                      className="flex items-center gap-1"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
                       <Button 
                         variant="ghost" 
                         size="icon" 
@@ -250,6 +322,70 @@ export default function AdminListingsPage() {
           </Table>
         </div>
       )}
+
+      <Sheet
+        open={isDetailsSheetOpen}
+        onOpenChange={(open) => {
+          setIsDetailsSheetOpen(open);
+          if (!open) setSelectedListing(null);
+        }}
+      >
+        <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
+          <SheetHeader className="px-6 pt-6">
+            <SheetTitle>{selectedListing?.title ?? "Listing Details"}</SheetTitle>
+          </SheetHeader>
+          {selectedListing && (
+            <div className="space-y-6 px-6 pb-6">
+              <ImageCarousel photos={selectedListingPhotos} title={selectedListing.title} />
+
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={selectedListing.is_active ? "default" : "secondary"}>
+                    {selectedListing.is_active ? "Active" : "Inactive"}
+                  </Badge>
+                  {selectedListing.categories?.name && (
+                    <Badge variant="outline">{selectedListing.categories.name}</Badge>
+                  )}
+                </div>
+
+                <DetailItem label="Inventory">
+                  <div className="grid grid-cols-2 gap-2 mt-1">
+                    {selectedListing.listing_inventory?.length > 0 ? (
+                      selectedListing.listing_inventory.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between p-2 rounded border bg-muted/30">
+                          <span className="font-medium">{item.size}</span>
+                          <span className={item.quantity === 0 ? "text-destructive font-bold" : ""}>
+                            {item.quantity} in stock
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-muted-foreground italic col-span-2">No sizes/quantities set.</span>
+                    )}
+                  </div>
+                </DetailItem>
+
+                <DetailItem label="Price">₱{selectedListing.price.toLocaleString()}</DetailItem>
+                <DetailItem label="Slug">{selectedListing.slug}</DetailItem>
+                <DetailItem label="Description">
+                  {selectedListing.description ? (
+                    <p className="whitespace-pre-line leading-relaxed">{selectedListing.description}</p>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </DetailItem>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <DetailItem label="Created">{formatDate(selectedListing.created_at)}</DetailItem>
+                  <DetailItem label="Updated">{formatDate(selectedListing.updated_at)}</DetailItem>
+                </div>
+                <DetailItem label="Listing ID">
+                  <span className="font-mono text-xs">{selectedListing.id}</span>
+                </DetailItem>
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

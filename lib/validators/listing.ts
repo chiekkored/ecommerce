@@ -9,6 +9,10 @@ export const listingSchema = z.object({
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug must be lowercase with hyphens only"),
   price: z.coerce.number().min(0, "Price must be 0 or greater"),
   size: z.string().max(50).optional().or(z.literal("")),
+  inventory: z.array(z.object({
+    size: z.string().min(1, "Size is required"),
+    quantity: z.coerce.number().int().min(0, "Quantity must be 0 or more"),
+  })).optional().default([]),
   description: z.string().max(5000).optional().or(z.literal("")),
   category_id: z.string().uuid().optional().or(z.literal("")),
   is_active: z.boolean().default(true),

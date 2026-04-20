@@ -2,10 +2,19 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import { RequestForm } from "@/components/catalog/RequestForm";
 import { createClient } from "@/lib/supabase/server";
+import type { ListingInventory } from "@/types";
 
 interface Props {
   params: Promise<{ itemId: string }>;
 }
+
+type RequestListing = {
+  id: string;
+  title: string;
+  price: number;
+  listing_photos: { image_url: string }[];
+  listing_inventory: Pick<ListingInventory, "id" | "size" | "quantity">[];
+};
 
 export default async function RequestPage({ params }: Props) {
   const { itemId } = await params;
@@ -17,9 +26,13 @@ export default async function RequestPage({ params }: Props) {
       id, 
       title, 
       price, 
-      size,
       listing_photos (
         image_url
+      ),
+      listing_inventory (
+        id,
+        size,
+        quantity
       )
     `)
     .eq("id", itemId)
@@ -28,7 +41,9 @@ export default async function RequestPage({ params }: Props) {
 
   if (!listing) notFound();
 
-  const primaryPhoto = listing.listing_photos?.[0]?.image_url;
+  const requestListing = listing as RequestListing;
+  const primaryPhoto = requestListing.listing_photos?.[0]?.image_url;
+  const inventory = requestListing.listing_inventory ?? [];
 
   return (
     <div className="max-w-lg mx-auto px-4 py-8">
@@ -44,7 +59,7 @@ export default async function RequestPage({ params }: Props) {
           <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border">
             <Image
               src={primaryPhoto}
-              alt={listing.title}
+              alt={requestListing.title}
               fill
               className="object-cover"
               sizes="80px"
@@ -52,15 +67,14 @@ export default async function RequestPage({ params }: Props) {
           </div>
         )}
         <div>
-          <p className="font-medium">{listing.title}</p>
+          <p className="font-medium">{requestListing.title}</p>
           <p className="text-sm text-muted-foreground mt-0.5">
-            ₱{listing.price.toLocaleString()}
-            {listing.size ? ` · Size: ${listing.size}` : ""}
+            ₱{requestListing.price.toLocaleString()}
           </p>
         </div>
       </div>
 
-      <RequestForm listingId={listing.id} />
+      <RequestForm listingId={requestListing.id} inventory={inventory} />
     </div>
   );
 }

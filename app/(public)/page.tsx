@@ -13,13 +13,16 @@ export default async function CatalogPage() {
   const [{ data: listingsRaw }, { data: categories }] = await Promise.all([
     supabase
       .from("listings")
-      .select("*, listing_photos(*)")
+      .select("*, listing_photos(*), listing_inventory(*)")
       .eq("is_active", true)
       .order("created_at", { ascending: false }),
     supabase.from("categories").select("*").order("name"),
   ]);
 
-  const listings = (listingsRaw ?? []) as unknown as (Listing & { listing_photos: ListingPhoto[] })[];
+  const listings = (listingsRaw ?? []) as unknown as (Listing & { 
+    listing_photos: ListingPhoto[];
+    listing_inventory: { quantity: number }[];
+  })[];
 
   return (
     <CatalogShell

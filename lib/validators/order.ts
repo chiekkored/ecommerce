@@ -8,6 +8,7 @@ export const orderRequestSchema = z
     buyer_messenger: z.string().max(200).optional().or(z.literal("")),
     buyer_instagram: z.string().max(200).optional().or(z.literal("")),
     contact_method: z.enum(["email", "messenger", "instagram"]).default("email"),
+    size: z.string().min(1, "Size is required"),
     quantity: z.coerce.number().int().min(1, "Quantity must be at least 1").max(999),
     message: z.string().max(1000).optional().or(z.literal("")),
   })

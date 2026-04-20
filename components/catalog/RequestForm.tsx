@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   orderRequestSchema,
   type OrderRequestFormValues,
@@ -21,6 +22,7 @@ const INSTAGRAM_URL = "https://www.instagram.com/it.sura.ph";
 
 interface RequestFormProps {
   listingId: string;
+  inventory: Array<{ id: string; size: string; quantity: number }>;
 }
 
 function FacebookLogo(props: SVGProps<SVGSVGElement>) {
@@ -41,7 +43,7 @@ function InstagramLogo(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-export function RequestForm({ listingId }: RequestFormProps) {
+export function RequestForm({ listingId, inventory }: RequestFormProps) {
   const [requestCode, setRequestCode] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -55,11 +57,15 @@ export function RequestForm({ listingId }: RequestFormProps) {
     resolver: zodResolver(orderRequestSchema) as Resolver<OrderRequestFormValues>,
     defaultValues: { 
       quantity: 1,
-      contact_method: "email"
+      contact_method: "email",
+      size: inventory.length === 1 && inventory[0].quantity > 0 ? inventory[0].size : ""
     },
   });
 
   const contactMethod = watch("contact_method");
+  const selectedSize = watch("size");
+  const currentItem = inventory.find(i => i.size === selectedSize);
+  const isOutOfStock = currentItem && currentItem.quantity === 0;
 
   const onSubmit = async (values: OrderRequestFormValues) => {
     setServerError(null);
@@ -120,6 +126,45 @@ export function RequestForm({ listingId }: RequestFormProps) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <div className="space-y-4 rounded-xl border p-4 bg-card">
+        <div className="space-y-3">
+          <Label className="text-base font-semibold">Select Size *</Label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {inventory.map((item) => (
+              <label 
+                key={item.id}
+                className={cn(
+                  "flex flex-col items-center justify-center p-3 rounded-lg border-2 cursor-pointer transition-all",
+                  selectedSize === item.size ? "border-primary bg-primary/5" : "border-muted hover:border-muted-foreground/50",
+                  item.quantity === 0 && "opacity-50 cursor-not-allowed bg-muted"
+                )}
+              >
+                <input 
+                  type="radio" 
+                  value={item.size} 
+                  {...register("size")} 
+                  className="sr-only"
+                  disabled={item.quantity === 0}
+                />
+                <span className="font-bold text-sm uppercase">{item.size}</span>
+                <span className="text-[10px] text-muted-foreground mt-0.5">
+                  {item.quantity === 0 ? "Out of Stock" : `${item.quantity} Available`}
+                </span>
+              </label>
+            ))}
+          </div>
+          {errors.size && (
+            <p className="text-xs text-destructive font-medium">{errors.size.message}</p>
+          )}
+          {isOutOfStock && (
+            <div className="flex items-center gap-2 p-2 text-[11px] text-destructive bg-destructive/10 rounded border border-destructive/20">
+              <AlertCircle className="size-3" />
+              <span>This size just went out of stock. Please pick another.</span>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="space-y-4 rounded-xl border p-4 bg-card">
         <div className="space-y-1.5">
           <Label htmlFor="buyer_name">Full Name *</Label>

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ListingForm } from "@/components/admin/ListingForm";
-import type { Listing, ListingPhoto, Category } from "@/types";
+import type { Listing, ListingPhoto, Category, ListingInventory } from "@/types";
 
 export const metadata = { title: "Edit Listing — Admin" };
 
@@ -16,13 +16,16 @@ export default async function EditListingPage({ params }: Props) {
   const [{ data: listingRaw }, { data: categories }] = await Promise.all([
     supabase
       .from("listings")
-      .select("*, listing_photos(*)")
+      .select("*, listing_photos(*), listing_inventory(*)")
       .eq("id", id)
       .single(),
     supabase.from("categories").select("*").order("name"),
   ]);
 
-  const listing = listingRaw as unknown as (Listing & { listing_photos: ListingPhoto[] }) | null;
+  const listing = listingRaw as unknown as (Listing & {
+    listing_photos: ListingPhoto[];
+    listing_inventory: ListingInventory[];
+  }) | null;
   if (!listing) notFound();
 
   return (

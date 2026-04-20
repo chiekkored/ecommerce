@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -11,25 +12,54 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { listingSchema, type ListingFormValues } from "@/lib/validators/listing";
 import { PhotoUploader } from "./PhotoUploader";
-import type { Category, Listing, ListingPhoto } from "@/types";
+import { Plus, Trash2, Upload } from "lucide-react";
+import type { Category, Listing, ListingPhoto, ListingInventory } from "@/types";
+
+type ListingWithMedia = Listing & {
+  listing_photos: ListingPhoto[];
+  listing_inventory: ListingInventory[];
+};
+
+type PendingPhoto = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
 
 interface ListingFormProps {
   categories: Category[];
-  listing?: Listing & { listing_photos: ListingPhoto[] };
+  listing?: ListingWithMedia;
+  onCreated?: () => void;
+  onSubmittingChange?: (isSubmitting: boolean) => void;
   onSuccess?: () => void;
   formId?: string;
 }
 
-export function ListingForm({ categories, listing, onSuccess, formId }: ListingFormProps) {
+export function ListingForm({
+  categories,
+  listing,
+  onCreated,
+  onSubmittingChange,
+  onSuccess,
+  formId,
+}: ListingFormProps) {
   const router = useRouter();
+  const pendingPhotoInputRef = useRef<HTMLInputElement>(null);
+  const pendingPhotosRef = useRef<PendingPhoto[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [createdListing, setCreatedListing] = useState<ListingWithMedia | null>(null);
   const [photos, setPhotos] = useState<ListingPhoto[]>(listing?.listing_photos ?? []);
+  const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingPendingPhotos, setIsUploadingPendingPhotos] = useState(false);
+  const activeListing = listing ?? createdListing;
 
   const {
     register,
     handleSubmit,
     setValue,
-    formState: { errors, isSubmitting },
+    watch,
+    formState: { errors },
   } = useForm<ListingFormValues>({
     resolver: zodResolver(listingSchema) as Resolver<ListingFormValues>,
     defaultValues: listing
@@ -38,12 +68,36 @@ export function ListingForm({ categories, listing, onSuccess, formId }: ListingF
           slug: listing.slug,
           price: listing.price,
           size: listing.size ?? "",
+          inventory: listing.listing_inventory.map(item => ({
+            size: item.size,
+            quantity: item.quantity
+          })),
           description: listing.description ?? "",
           category_id: listing.category_id ?? "",
           is_active: listing.is_active,
         }
-      : { is_active: true, price: 0, size: "" },
+      : { is_active: true, price: 0, size: "", inventory: [] },
   });
+
+  const inventory = watch("inventory") || [];
+
+  useEffect(() => {
+    pendingPhotosRef.current = pendingPhotos;
+  }, [pendingPhotos]);
+
+  useEffect(() => {
+    return () => {
+      pendingPhotosRef.current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+    };
+  }, []);
+
+  const addInventoryItem = () => {
+    setValue("inventory", [...inventory, { size: "", quantity: 1 }]);
+  };
+
+  const removeInventoryItem = (index: number) => {
+    setValue("inventory", inventory.filter((_, i) => i !== index));
+  };
 
   const autoSlug = (title: string) =>
     title
@@ -52,25 +106,119 @@ export function ListingForm({ categories, listing, onSuccess, formId }: ListingF
       .trim()
       .replace(/\s+/g, "-");
 
+  const handlePendingPhotoSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) return;
+
+    setPendingPhotos((currentPhotos) => [
+      ...currentPhotos,
+      ...files.map((file) => ({
+        id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+      })),
+    ]);
+
+    if (event.target) event.target.value = "";
+  };
+
+  const removePendingPhoto = (photoId: string) => {
+    setPendingPhotos((currentPhotos) => {
+      const photoToRemove = currentPhotos.find((photo) => photo.id === photoId);
+      if (photoToRemove) URL.revokeObjectURL(photoToRemove.previewUrl);
+      return currentPhotos.filter((photo) => photo.id !== photoId);
+    });
+  };
+
+  const uploadPendingPhotos = async (listingId: string) => {
+    if (!pendingPhotos.length) return [];
+
+    setIsUploadingPendingPhotos(true);
+    const uploadedPhotos: ListingPhoto[] = [];
+
+    try {
+      for (const pendingPhoto of pendingPhotos) {
+        const formData = new FormData();
+        formData.append("file", pendingPhoto.file);
+        formData.append("listing_id", listingId);
+
+        const uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
+        const uploadData = await uploadRes.json();
+
+        if (!uploadRes.ok) {
+          throw new Error(uploadData.error ?? "Photo upload failed.");
+        }
+
+        uploadedPhotos.push(uploadData.photo as ListingPhoto);
+      }
+
+      pendingPhotos.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+      setPendingPhotos([]);
+      return uploadedPhotos;
+    } finally {
+      setIsUploadingPendingPhotos(false);
+    }
+  };
+
   const onSubmit = async (values: ListingFormValues) => {
     setError(null);
-    const url = listing ? `/api/listings/${listing.id}` : "/api/listings";
-    const method = listing ? "PUT" : "POST";
+    setIsSaving(true);
+    onSubmittingChange?.(true);
 
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(values),
-    });
+    const url = activeListing ? `/api/listings/${activeListing.id}` : "/api/listings";
+    const method = activeListing ? "PUT" : "POST";
 
-    if (!res.ok) {
-      const data = await res.json();
-      setError(data.error ?? "Failed to save listing.");
-      return;
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error ?? "Failed to save listing.");
+        return;
+      }
+
+      const savedListing = (await res.json()) as Listing;
+
+      if (!activeListing) {
+        const newListing: ListingWithMedia = {
+          ...savedListing,
+          listing_photos: [],
+          listing_inventory: [],
+        };
+
+        setCreatedListing(newListing);
+        setPhotos([]);
+        onCreated?.();
+
+        let uploadedPhotos: ListingPhoto[] = [];
+
+        try {
+          uploadedPhotos = await uploadPendingPhotos(savedListing.id);
+        } catch (err) {
+          pendingPhotos.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
+          setPendingPhotos([]);
+          throw err;
+        }
+
+        setCreatedListing({
+          ...newListing,
+          listing_photos: uploadedPhotos,
+        });
+        setPhotos(uploadedPhotos);
+      }
+
+      onSuccess?.();
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save listing.");
+    } finally {
+      setIsSaving(false);
+      onSubmittingChange?.(false);
     }
-
-    onSuccess?.();
-    router.refresh();
   };
 
   return (
@@ -82,7 +230,7 @@ export function ListingForm({ categories, listing, onSuccess, formId }: ListingF
           {...register("title")}
           onChange={(e) => {
             register("title").onChange(e);
-            if (!listing) setValue("slug", autoSlug(e.target.value));
+            if (!activeListing) setValue("slug", autoSlug(e.target.value));
           }}
         />
         {errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
@@ -100,27 +248,73 @@ export function ListingForm({ categories, listing, onSuccess, formId }: ListingF
           <Input id="price" type="number" step="0.01" min="0" {...register("price")} />
           {errors.price && <p className="text-xs text-destructive">{errors.price.message}</p>}
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="size">Size</Label>
-          <Select 
-            defaultValue={listing?.size || "N/A"} 
-            onValueChange={(val) => setValue("size", val === "N/A" ? "" : val)}
-          >
-            <SelectTrigger id="size" className="w-full">
-              <SelectValue placeholder="Select size" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="N/A">N/A</SelectItem>
-              <SelectItem value="XS">XS</SelectItem>
-              <SelectItem value="S">S</SelectItem>
-              <SelectItem value="M">M</SelectItem>
-              <SelectItem value="L">L</SelectItem>
-              <SelectItem value="XL">XL</SelectItem>
-              <SelectItem value="XXL">XXL</SelectItem>
-              <SelectItem value="Free Size">Free Size</SelectItem>
-            </SelectContent>
-          </Select>
+      </div>
+
+      <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm font-semibold">Inventory</Label>
+          <Button type="button" variant="outline" size="sm" onClick={addInventoryItem} disabled={isSaving}>
+            <Plus className="h-4 w-4 mr-1" /> Add Size
+          </Button>
         </div>
+
+        {!inventory.length && (
+          <p className="text-xs text-muted-foreground italic">No sizes added yet. At least one size is recommended.</p>
+        )}
+
+        {inventory.map((item, index) => (
+          <div key={index} className="flex gap-2 items-end">
+            <div className="flex-1 space-y-1">
+              <Label className="text-[10px] uppercase">Size</Label>
+              <Select 
+                value={item.size} 
+                onValueChange={(val) => {
+                  const newInventory = [...inventory];
+                  newInventory[index].size = val;
+                  setValue("inventory", newInventory);
+                }}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Size" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="XS">XS</SelectItem>
+                  <SelectItem value="S">S</SelectItem>
+                  <SelectItem value="M">M</SelectItem>
+                  <SelectItem value="L">L</SelectItem>
+                  <SelectItem value="XL">XL</SelectItem>
+                  <SelectItem value="XXL">XXL</SelectItem>
+                  <SelectItem value="Free Size">Free Size</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-24 space-y-1">
+              <Label className="text-[10px] uppercase">Qty</Label>
+              <Input 
+                type="number" 
+                min="0" 
+                className="h-9"
+                value={item.quantity}
+                onChange={(e) => {
+                  const newInventory = [...inventory];
+                  newInventory[index].quantity = parseInt(e.target.value) || 0;
+                  setValue("inventory", newInventory);
+                }}
+              />
+            </div>
+            <Button 
+              type="button" 
+              variant="ghost" 
+              size="icon" 
+              className="h-9 w-9 text-destructive"
+              onClick={() => removeInventoryItem(index)}
+              disabled={isSaving}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        ))}
+        {errors.inventory && <p className="text-xs text-destructive">{errors.inventory.message}</p>}
       </div>
 
       <div className="space-y-1.5">
@@ -149,12 +343,48 @@ export function ListingForm({ categories, listing, onSuccess, formId }: ListingF
         <Label htmlFor="is_active">Active (visible to buyers)</Label>
       </div>
 
-      {listing && (
-        <div className="space-y-1.5">
-          <Label>Photos</Label>
-          <PhotoUploader listingId={listing.id} photos={photos} onPhotosChange={setPhotos} />
-        </div>
-      )}
+      <div className="space-y-1.5">
+        <Label>Photos</Label>
+        {activeListing ? (
+          <PhotoUploader listingId={activeListing.id} photos={photos} onPhotosChange={setPhotos} />
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-3">
+              {pendingPhotos.map((photo) => (
+                <div key={photo.id} className="relative h-20 w-20 overflow-hidden rounded border">
+                  <Image src={photo.previewUrl} alt="Pending photo" fill className="object-cover" sizes="80px" />
+                  <button
+                    type="button"
+                    onClick={() => removePendingPhoto(photo.id)}
+                    disabled={isSaving || isUploadingPendingPhotos}
+                    className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity hover:opacity-100"
+                  >
+                    <Trash2 className="h-4 w-4 text-white" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <input
+              ref={pendingPhotoInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handlePendingPhotoSelect}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => pendingPhotoInputRef.current?.click()}
+              disabled={isSaving || isUploadingPendingPhotos}
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              {isUploadingPendingPhotos ? "Uploading..." : "Upload Photos"}
+            </Button>
+          </div>
+        )}
+      </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
     </form>
