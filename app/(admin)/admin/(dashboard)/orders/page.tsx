@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { PaginationState, SortingState } from "@tanstack/react-table";
 import { createClient } from "@/lib/supabase/client";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { UpdateOrderStatusModal } from "@/components/admin/UpdateOrderStatusModal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { AdminDataTable, resolveUpdater, type AdminDataTableColumn } from "@/components/admin/AdminDataTable";
 import { TableSearchInput } from "@/components/admin/TableSearchInput";
 import { ADMIN_TABLE_PAGE_SIZE, type AdminTableQuery, type AdminTableResult } from "@/lib/admin-table";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
@@ -16,6 +17,8 @@ import type { OrderStatus, OrderRequest, Listing } from "@/types";
 type OrderRow = OrderRequest & {
   listings: Pick<Listing, "id" | "title" | "slug" | "price" | "size"> | null;
 };
+
+const SORTABLE_COLUMNS = new Set(["request_code", "buyer_name", "quantity", "status", "created_at"]);
 
 const getStatusVariant = (status: OrderStatus): "default" | "secondary" | "destructive" | "outline" => {
   switch (status) {
@@ -86,10 +89,17 @@ function normalizeInstagramHref(value: string) {
   return `https://www.instagram.com/${trimmed.replace(/^@/, "")}`;
 }
 
-async function getOrdersPageData({ search, page, pageSize }: AdminTableQuery): Promise<AdminTableResult<OrderRow>> {
+async function getOrdersPageData({
+  search,
+  page,
+  pageSize,
+  sortBy,
+  sortDirection,
+}: AdminTableQuery): Promise<AdminTableResult<OrderRow>> {
   const supabase = createClient();
   const normalizedSearch = search.trim();
   let matchingListingIds: string[] = [];
+  const sortColumn = sortBy && SORTABLE_COLUMNS.has(sortBy) ? sortBy : "created_at";
 
   if (normalizedSearch) {
     const { data: matchingListings } = await supabase
@@ -102,7 +112,7 @@ async function getOrdersPageData({ search, page, pageSize }: AdminTableQuery): P
   let ordersQuery = supabase
     .from("order_requests")
     .select("*, listings(id, title, slug, price, size)", { count: "exact" })
-    .order("created_at", { ascending: false });
+    .order(sortColumn, { ascending: sortDirection === "asc" });
 
   if (normalizedSearch) {
     if (matchingListingIds.length) {
@@ -129,18 +139,25 @@ export default function AdminOrdersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [, setTotal] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [sorting, setSorting] = useState<SortingState>([{ id: "created_at", desc: true }]);
   const [hasOrders, setHasOrders] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<OrderRow | null>(null);
   const [isDetailsSheetOpen, setIsDetailsSheetOpen] = useState(false);
   const debouncedSearch = useDebouncedValue(search);
+  const pageSize = ADMIN_TABLE_PAGE_SIZE;
+  const pagination: PaginationState = { pageIndex: page - 1, pageSize };
+  const pageCount = Math.ceil(total / pageSize);
+  const activeSort = sorting[0];
 
   const fetchOrders = useCallback(async () => {
     setIsLoading(true);
     const { rows, total } = await getOrdersPageData({
       search: debouncedSearch,
       page,
-      pageSize: ADMIN_TABLE_PAGE_SIZE,
+      pageSize,
+      sortBy: activeSort?.id,
+      sortDirection: activeSort?.desc ? "desc" : "asc",
     });
     setOrders(rows);
     setTotal(total);
@@ -148,7 +165,7 @@ export default function AdminOrdersPage() {
       setHasOrders(total > 0);
     }
     setIsLoading(false);
-  }, [debouncedSearch, page]);
+  }, [activeSort?.desc, activeSort?.id, debouncedSearch, page, pageSize]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -157,7 +174,9 @@ export default function AdminOrdersPage() {
       const { rows, total } = await getOrdersPageData({
         search: debouncedSearch,
         page,
-        pageSize: ADMIN_TABLE_PAGE_SIZE,
+        pageSize,
+        sortBy: activeSort?.id,
+        sortDirection: activeSort?.desc ? "desc" : "asc",
       });
 
       if (!isCurrent) return;
@@ -175,7 +194,7 @@ export default function AdminOrdersPage() {
     return () => {
       isCurrent = false;
     };
-  }, [debouncedSearch, page]);
+  }, [activeSort?.desc, activeSort?.id, debouncedSearch, page, pageSize]);
 
   const hasSearch = Boolean(debouncedSearch.trim());
 
@@ -183,6 +202,120 @@ export default function AdminOrdersPage() {
     setSelectedOrder(order);
     setIsDetailsSheetOpen(true);
   };
+
+  const columns = useMemo<AdminDataTableColumn<OrderRow>[]>(
+    () => [
+      {
+        accessorKey: "request_code",
+        header: "Code",
+        enableSorting: true,
+        meta: { skeleton: <Skeleton className="h-4 w-12" /> },
+        cell: ({ row }) => <span className="font-mono text-xs">{row.original.request_code}</span>,
+      },
+      {
+        id: "item",
+        header: "Item",
+        meta: { cellClassName: "max-w-[180px]", skeleton: <Skeleton className="h-4 w-40" /> },
+        cell: ({ row }) => (
+          <div className="space-y-0.5">
+            <p className="truncate font-medium">
+              {row.original.listings?.title ?? <span className="text-muted-foreground">—</span>}
+            </p>
+            {row.original.size && (
+              <Badge variant="secondary" className="h-4 text-[10px]">
+                Size: {row.original.size}
+              </Badge>
+            )}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "buyer_name",
+        header: "Buyer",
+        enableSorting: true,
+        meta: {
+          skeleton: (
+            <div className="space-y-1">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-48" />
+            </div>
+          ),
+        },
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <div className="text-sm">
+              <p className="font-medium">{order.buyer_name}</p>
+              <p className="text-xs text-muted-foreground">{order.buyer_phone}</p>
+              <div className="mt-1 flex flex-col gap-0.5">
+                {order.buyer_email && (
+                  <p className="w-fit rounded bg-muted px-1 text-[10px] text-muted-foreground">E: {order.buyer_email}</p>
+                )}
+                {order.buyer_messenger && (
+                  <p className="w-fit rounded bg-blue-50 px-1 text-[10px] text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                    M: {order.buyer_messenger}
+                  </p>
+                )}
+                {order.buyer_instagram && (
+                  <p className="w-fit rounded bg-pink-50 px-1 text-[10px] text-pink-600 dark:bg-pink-900/30 dark:text-pink-400">
+                    IG: {order.buyer_instagram}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "quantity",
+        header: "Qty",
+        enableSorting: true,
+        meta: { skeleton: <Skeleton className="h-4 w-8" /> },
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        enableSorting: true,
+        meta: { skeleton: <Skeleton className="h-6 w-24 rounded-full" /> },
+        cell: ({ row }) => (
+          <Badge variant={getStatusVariant(row.original.status as OrderStatus)}>
+            {statusLabels[row.original.status as OrderStatus]}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: "created_at",
+        header: "Date",
+        enableSorting: true,
+        meta: { cellClassName: "text-xs text-muted-foreground", skeleton: <Skeleton className="h-4 w-20" /> },
+        cell: ({ row }) => new Date(row.original.created_at).toLocaleDateString(),
+      },
+      {
+        id: "actions",
+        header: "Actions",
+        meta: {
+          headerClassName: "w-24 text-right",
+          cellClassName: "text-right",
+          skeleton: <Skeleton className="ml-auto h-8 w-8 rounded-md" />,
+        },
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <div onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+              <UpdateOrderStatusModal
+                orderId={order.id}
+                requestCode={order.request_code}
+                itemName={order.listings?.title ?? "Unknown Item"}
+                currentStatus={order.status as OrderStatus}
+                onSuccess={fetchOrders}
+              />
+            </div>
+          );
+        },
+      },
+    ],
+    [fetchOrders],
+  );
 
   return (
     <div className="space-y-4">
@@ -200,143 +333,26 @@ export default function AdminOrdersPage() {
         />
       </div>
 
-      {isLoading ? (
-        <div className="border rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Item</TableHead>
-                <TableHead>Buyer</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead className="w-24 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell>
-                    <Skeleton className="h-4 w-12" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-40" />
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-3 w-48" />
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-8" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-6 w-24 rounded-full" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-20" />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Skeleton className="h-8 w-8 ml-auto rounded-md" />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : !orders?.length ? (
-        <p className="text-muted-foreground text-sm py-8 text-center">
-          {hasSearch && hasOrders ? "No orders match your search." : "No orders yet."}
-        </p>
-      ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Item</TableHead>
-                <TableHead>Buyer</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead className="w-24 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {orders.map((order) => (
-                <TableRow
-                  key={order.id}
-                  role="button"
-                  tabIndex={0}
-                  className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  onClick={() => openOrderDetails(order)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      openOrderDetails(order);
-                    }
-                  }}
-                >
-                  <TableCell className="font-mono text-xs">{order.request_code}</TableCell>
-                  <TableCell className="max-w-[180px]">
-                    <div className="space-y-0.5">
-                      <p className="font-medium truncate">{order.listings?.title ?? <span className="text-muted-foreground">—</span>}</p>
-                      {order.size && (
-                        <Badge variant="secondary" className="text-[10px] h-4">Size: {order.size}</Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      <p className="font-medium">{order.buyer_name}</p>
-                      <p className="text-muted-foreground text-xs">{order.buyer_phone}</p>
-                      <div className="flex flex-col gap-0.5 mt-1">
-                        {order.buyer_email && (
-                          <p className="text-[10px] bg-muted w-fit px-1 rounded text-muted-foreground">
-                            E: {order.buyer_email}
-                          </p>
-                        )}
-                        {order.buyer_messenger && (
-                          <p className="text-[10px] bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 w-fit px-1 rounded">
-                            M: {order.buyer_messenger}
-                          </p>
-                        )}
-                        {order.buyer_instagram && (
-                          <p className="text-[10px] bg-pink-50 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400 w-fit px-1 rounded">
-                            IG: {order.buyer_instagram}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{order.quantity}</TableCell>
-                  <TableCell>
-                    <Badge variant={getStatusVariant(order.status as OrderStatus)}>
-                      {statusLabels[order.status as OrderStatus]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {new Date(order.created_at).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                    <div onKeyDown={(event) => event.stopPropagation()}>
-                      <UpdateOrderStatusModal
-                        orderId={order.id}
-                        requestCode={order.request_code}
-                        itemName={order.listings?.title ?? "Unknown Item"}
-                        currentStatus={order.status as OrderStatus}
-                        onSuccess={fetchOrders}
-                      />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      <AdminDataTable
+        columns={columns}
+        data={orders}
+        getRowId={(order) => order.id}
+        isLoading={isLoading}
+        emptyMessage={hasSearch && hasOrders ? "No orders match your search." : "No orders yet."}
+        pagination={pagination}
+        pageCount={pageCount}
+        total={total}
+        sorting={sorting}
+        onSortingChange={(updater) => {
+          setSorting((current) => resolveUpdater(updater, current).slice(0, 1));
+          setPage(1);
+        }}
+        onPaginationChange={(updater) => {
+          const nextPagination = resolveUpdater(updater, pagination);
+          setPage(nextPagination.pageIndex + 1);
+        }}
+        onRowClick={openOrderDetails}
+      />
 
       <Sheet
         open={isDetailsSheetOpen}

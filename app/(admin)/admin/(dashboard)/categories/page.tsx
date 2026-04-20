@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { PaginationState, SortingState } from "@tanstack/react-table";
 import { Pencil, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { ButtonWithIcon } from "@/components/ui/button-with-icon";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Sheet,
   SheetClose,
@@ -16,19 +16,37 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { AdminDataTable, resolveUpdater, type AdminDataTableColumn } from "@/components/admin/AdminDataTable";
 import { CategoryForm } from "@/components/admin/CategoryForm";
 import { DeleteCategoryButton } from "@/components/admin/DeleteCategoryButton";
+import { ADMIN_TABLE_PAGE_SIZE, type AdminTableQuery, type AdminTableResult } from "@/lib/admin-table";
 import type { Category } from "@/types";
 
 const FORM_ID = "category-form";
+const SORTABLE_COLUMNS = new Set(["name", "slug", "created_at"]);
 
-async function getCategories() {
+async function getCategories({
+  page,
+  pageSize,
+  sortBy,
+  sortDirection,
+}: Pick<AdminTableQuery, "page" | "pageSize" | "sortBy" | "sortDirection">): Promise<AdminTableResult<Category>> {
   const supabase = createClient();
-  const { data, error } = await supabase.from("categories").select("*").order("name");
+  const sortColumn = sortBy && SORTABLE_COLUMNS.has(sortBy) ? sortBy : "name";
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, count, error } = await supabase
+    .from("categories")
+    .select("*", { count: "exact" })
+    .order(sortColumn, { ascending: sortDirection !== "desc" })
+    .range(from, to);
 
   if (error) throw new Error(error.message);
 
-  return data ?? [];
+  return {
+    rows: data ?? [],
+    total: count ?? 0,
+  };
 }
 
 export default function AdminCategoriesPage() {
@@ -36,21 +54,34 @@ export default function AdminCategoriesPage() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [sorting, setSorting] = useState<SortingState>([{ id: "name", desc: false }]);
   const [error, setError] = useState<string | null>(null);
+  const pageSize = ADMIN_TABLE_PAGE_SIZE;
+  const pagination: PaginationState = { pageIndex: page - 1, pageSize };
+  const pageCount = Math.ceil(total / pageSize);
+  const activeSort = sorting[0];
 
   const fetchCategories = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const rows = await getCategories();
+      const { rows, total } = await getCategories({
+        page,
+        pageSize,
+        sortBy: activeSort?.id,
+        sortDirection: activeSort?.desc ? "desc" : "asc",
+      });
       setCategories(rows);
+      setTotal(total);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load categories.");
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [activeSort?.desc, activeSort?.id, page, pageSize]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -60,9 +91,15 @@ export default function AdminCategoriesPage() {
       setError(null);
 
       try {
-        const rows = await getCategories();
+        const { rows, total } = await getCategories({
+          page,
+          pageSize,
+          sortBy: activeSort?.id,
+          sortDirection: activeSort?.desc ? "desc" : "asc",
+        });
         if (!isCurrent) return;
         setCategories(rows);
+        setTotal(total);
       } catch (err) {
         if (!isCurrent) return;
         setError(err instanceof Error ? err.message : "Failed to load categories.");
@@ -76,7 +113,68 @@ export default function AdminCategoriesPage() {
     return () => {
       isCurrent = false;
     };
-  }, []);
+  }, [activeSort?.desc, activeSort?.id, page, pageSize]);
+
+  const columns = useMemo<AdminDataTableColumn<Category>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: "Name",
+        enableSorting: true,
+        meta: { skeleton: <Skeleton className="h-5 w-40" /> },
+        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+      },
+      {
+        accessorKey: "slug",
+        header: "Slug",
+        enableSorting: true,
+        meta: { skeleton: <Skeleton className="h-5 w-32" /> },
+        cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.slug}</span>,
+      },
+      {
+        accessorKey: "created_at",
+        header: "Created",
+        enableSorting: true,
+        meta: { skeleton: <Skeleton className="h-5 w-24" /> },
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground">{new Date(row.original.created_at).toLocaleDateString()}</span>
+        ),
+      },
+      {
+        id: "actions",
+        header: "Actions",
+        meta: {
+          headerClassName: "w-24 text-right",
+          cellClassName: "text-right",
+          skeleton: (
+            <div className="flex justify-end gap-1">
+              <Skeleton className="h-8 w-8 rounded-md" />
+              <Skeleton className="h-8 w-8 rounded-md" />
+            </div>
+          ),
+        },
+        cell: ({ row }) => {
+          const category = row.original;
+          return (
+            <div className="flex justify-end gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setEditingCategory(category);
+                  setIsSheetOpen(true);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <DeleteCategoryButton categoryId={category.id} categoryName={category.name} onDeleted={fetchCategories} />
+            </div>
+          );
+        },
+      },
+    ],
+    [fetchCategories],
+  );
 
   return (
     <div className="space-y-4">
@@ -122,86 +220,25 @@ export default function AdminCategoriesPage() {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      {isLoading ? (
-        <div className="border rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Slug</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="w-24 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Array.from({ length: 5 }).map((_, index) => (
-                <TableRow key={index}>
-                  <TableCell>
-                    <Skeleton className="h-5 w-40" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-5 w-32" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-5 w-24" />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Skeleton className="h-8 w-8 rounded-md" />
-                      <Skeleton className="h-8 w-8 rounded-md" />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : !categories.length ? (
-        <p className="text-muted-foreground text-sm py-8 text-center">No categories yet.</p>
-      ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Slug</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="w-24 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {categories.map((category) => (
-                <TableRow key={category.id}>
-                  <TableCell className="font-medium">{category.name}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{category.slug}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {new Date(category.created_at).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setEditingCategory(category);
-                          setIsSheetOpen(true);
-                        }}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <DeleteCategoryButton
-                        categoryId={category.id}
-                        categoryName={category.name}
-                        onDeleted={fetchCategories}
-                      />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      <AdminDataTable
+        columns={columns}
+        data={categories}
+        getRowId={(category) => category.id}
+        isLoading={isLoading}
+        emptyMessage="No categories yet."
+        pagination={pagination}
+        pageCount={pageCount}
+        total={total}
+        sorting={sorting}
+        onSortingChange={(updater) => {
+          setSorting((current) => resolveUpdater(updater, current).slice(0, 1));
+          setPage(1);
+        }}
+        onPaginationChange={(updater) => {
+          const nextPagination = resolveUpdater(updater, pagination);
+          setPage(nextPagination.pageIndex + 1);
+        }}
+      />
     </div>
   );
 }

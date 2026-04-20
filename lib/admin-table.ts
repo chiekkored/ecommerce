@@ -4,6 +4,8 @@ export type AdminTableQuery = {
   search: string;
   page: number;
   pageSize: number;
+  sortBy?: string;
+  sortDirection?: "asc" | "desc";
 };
 
 export type AdminTableResult<T> = {

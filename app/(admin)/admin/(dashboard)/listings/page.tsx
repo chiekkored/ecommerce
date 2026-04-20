@@ -1,15 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { PaginationState, SortingState } from "@tanstack/react-table";
 import { createClient } from "@/lib/supabase/client";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,12 +20,14 @@ import {
 } from "@/components/ui/sheet";
 import { ListingForm } from "@/components/admin/ListingForm";
 import { ImageCarousel } from "@/components/catalog/ImageCarousel";
+import { AdminDataTable, resolveUpdater, type AdminDataTableColumn } from "@/components/admin/AdminDataTable";
 import { TableSearchInput } from "@/components/admin/TableSearchInput";
 import { ADMIN_TABLE_PAGE_SIZE, type AdminTableQuery, type AdminTableResult } from "@/lib/admin-table";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import type { Listing, Category, ListingPhoto, ListingInventory } from "@/types";
 
 const FORM_ID = "listing-form";
+const SORTABLE_COLUMNS = new Set(["title", "price", "created_at", "is_active"]);
 
 type ListingWithCategory = Listing & {
   categories: Pick<Category, "name"> | null;
@@ -57,13 +52,16 @@ async function getListingsPageData({
   search,
   page,
   pageSize,
+  sortBy,
+  sortDirection,
 }: AdminTableQuery): Promise<AdminTableResult<ListingWithCategory> & { categories: Category[] }> {
   const supabase = createClient();
+  const sortColumn = sortBy && SORTABLE_COLUMNS.has(sortBy) ? sortBy : "created_at";
 
   let listingsQuery = supabase
     .from("listings")
     .select("*, categories(name), listing_photos(*), listing_inventory(*)", { count: "exact" })
-    .order("created_at", { ascending: false });
+    .order(sortColumn, { ascending: sortDirection === "asc" });
 
   const normalizedSearch = search.trim();
   if (normalizedSearch) {
@@ -94,16 +92,23 @@ export default function AdminListingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [, setTotal] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [sorting, setSorting] = useState<SortingState>([{ id: "created_at", desc: true }]);
   const [hasListings, setHasListings] = useState(false);
   const debouncedSearch = useDebouncedValue(search);
+  const pageSize = ADMIN_TABLE_PAGE_SIZE;
+  const pagination: PaginationState = { pageIndex: page - 1, pageSize };
+  const pageCount = Math.ceil(total / pageSize);
+  const activeSort = sorting[0];
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     const { rows, total, categories } = await getListingsPageData({
       search: debouncedSearch,
       page,
-      pageSize: ADMIN_TABLE_PAGE_SIZE,
+      pageSize,
+      sortBy: activeSort?.id,
+      sortDirection: activeSort?.desc ? "desc" : "asc",
     });
     setListings(rows);
     setCategories(categories);
@@ -112,7 +117,7 @@ export default function AdminListingsPage() {
       setHasListings(total > 0);
     }
     setIsLoading(false);
-  }, [debouncedSearch, page]);
+  }, [activeSort?.desc, activeSort?.id, debouncedSearch, page, pageSize]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -121,7 +126,9 @@ export default function AdminListingsPage() {
       const { rows, total, categories } = await getListingsPageData({
         search: debouncedSearch,
         page,
-        pageSize: ADMIN_TABLE_PAGE_SIZE,
+        pageSize,
+        sortBy: activeSort?.id,
+        sortDirection: activeSort?.desc ? "desc" : "asc",
       });
 
       if (!isCurrent) return;
@@ -140,7 +147,7 @@ export default function AdminListingsPage() {
     return () => {
       isCurrent = false;
     };
-  }, [debouncedSearch, page]);
+  }, [activeSort?.desc, activeSort?.id, debouncedSearch, page, pageSize]);
 
   const hasSearch = Boolean(debouncedSearch.trim());
   const selectedListingPhotos = selectedListing
@@ -151,6 +158,78 @@ export default function AdminListingsPage() {
     setSelectedListing(listing);
     setIsDetailsSheetOpen(true);
   };
+
+  const columns = useMemo<AdminDataTableColumn<ListingWithCategory>[]>(
+    () => [
+      {
+        accessorKey: "title",
+        header: "Title",
+        enableSorting: true,
+        meta: { skeleton: <Skeleton className="h-5 w-40" /> },
+        cell: ({ row }) => <span className="font-medium">{row.original.title}</span>,
+      },
+      {
+        accessorKey: "price",
+        header: "Price",
+        enableSorting: true,
+        meta: { skeleton: <Skeleton className="h-5 w-16" /> },
+        cell: ({ row }) => `₱${row.original.price.toLocaleString()}`,
+      },
+      {
+        id: "category",
+        header: "Category",
+        meta: { skeleton: <Skeleton className="h-5 w-24" /> },
+        cell: ({ row }) => row.original.categories?.name ?? <span className="text-muted-foreground">—</span>,
+      },
+      {
+        accessorKey: "is_active",
+        header: "Status",
+        enableSorting: true,
+        meta: { skeleton: <Skeleton className="h-5 w-20 rounded-full" /> },
+        cell: ({ row }) => (
+          <Badge variant={row.original.is_active ? "default" : "secondary"}>
+            {row.original.is_active ? "Active" : "Inactive"}
+          </Badge>
+        ),
+      },
+      {
+        id: "actions",
+        header: "Actions",
+        meta: {
+          headerClassName: "w-24",
+          skeleton: (
+            <div className="flex items-center gap-1">
+              <Skeleton className="h-8 w-8 rounded-md" />
+              <Skeleton className="h-8 w-8 rounded-md" />
+            </div>
+          ),
+        },
+        cell: ({ row }) => {
+          const listing = row.original;
+          return (
+            <div
+              className="flex items-center gap-1"
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setEditingListing(listing);
+                  setIsSheetOpen(true);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <DeleteListingButton id={listing.id} />
+            </div>
+          );
+        },
+      },
+    ],
+    [],
+  );
 
   return (
     <div className="space-y-4">
@@ -227,101 +306,26 @@ export default function AdminListingsPage() {
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="border rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Title</TableHead>
-                <TableHead>Price</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-24">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell><Skeleton className="h-5 w-40" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-16" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Skeleton className="h-8 w-8 rounded-md" />
-                      <Skeleton className="h-8 w-8 rounded-md" />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      ) : !listings?.length ? (
-        <p className="text-muted-foreground text-sm py-8 text-center">
-          {hasSearch && hasListings ? "No listings match your search." : "No listings yet."}
-        </p>
-      ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Title</TableHead>
-                <TableHead>Price</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-24">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {listings.map((listing) => (
-                <TableRow
-                  key={listing.id}
-                  role="button"
-                  tabIndex={0}
-                  className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  onClick={() => openListingDetails(listing)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      openListingDetails(listing);
-                    }
-                  }}
-                >
-                  <TableCell className="font-medium">{listing.title}</TableCell>
-                  <TableCell>₱{listing.price.toLocaleString()}</TableCell>
-                  <TableCell>
-                    {listing.categories?.name ?? (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={listing.is_active ? "default" : "secondary"}>
-                      {listing.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div
-                      className="flex items-center gap-1"
-                      onClick={(event) => event.stopPropagation()}
-                      onKeyDown={(event) => event.stopPropagation()}
-                    >
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        onClick={() => { setEditingListing(listing); setIsSheetOpen(true); }}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <DeleteListingButton id={listing.id} />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      <AdminDataTable
+        columns={columns}
+        data={listings}
+        getRowId={(listing) => listing.id}
+        isLoading={isLoading}
+        emptyMessage={hasSearch && hasListings ? "No listings match your search." : "No listings yet."}
+        pagination={pagination}
+        pageCount={pageCount}
+        total={total}
+        sorting={sorting}
+        onSortingChange={(updater) => {
+          setSorting((current) => resolveUpdater(updater, current).slice(0, 1));
+          setPage(1);
+        }}
+        onPaginationChange={(updater) => {
+          const nextPagination = resolveUpdater(updater, pagination);
+          setPage(nextPagination.pageIndex + 1);
+        }}
+        onRowClick={openListingDetails}
+      />
 
       <Sheet
         open={isDetailsSheetOpen}
