@@ -138,6 +138,9 @@ export default function AdminUsersPage() {
   }, [debouncedSearch, page]);
 
   const isSuperAdmin = currentRole === "superadmin";
+  const canChangeEditingUserPassword = Boolean(
+    editingUser && (isSuperAdmin || currentUser?.id === editingUser.id)
+  );
   const hasSearch = Boolean(debouncedSearch.trim());
 
   return (
@@ -176,6 +179,7 @@ export default function AdminUsersPage() {
                   user={editingUser ?? undefined} 
                   onSuccess={() => { setIsSheetOpen(false); fetchProfiles(); }} 
                   formId={FORM_ID}
+                  canChangePassword={canChangeEditingUserPassword}
                 />
               </div>
               <SheetFooter className="px-6 pb-6">

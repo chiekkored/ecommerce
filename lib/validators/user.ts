@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+const optionalPasswordSchema = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().min(6, "Password must be at least 6 characters").optional()
+);
+
 export const userCreateSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
@@ -9,6 +14,7 @@ export const userCreateSchema = z.object({
 
 export const userUpdateSchema = z.object({
   fullName: z.string().min(2, "Name must be at least 2 characters").optional(),
+  password: optionalPasswordSchema,
   role: z.enum(["superadmin", "admin", "staff"]).optional(),
 });
 

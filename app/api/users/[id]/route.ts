@@ -3,6 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { userUpdateSchema } from "@/lib/validators/user";
 
+type ProfileUpdate = {
+  full_name?: string;
+  role?: "superadmin" | "admin" | "staff";
+};
+
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -46,14 +51,33 @@ export async function PUT(
     );
   }
 
-  // Use Admin Client to update profile (roles might need admin client if RLS is strict)
   const adminClient = createAdminClient();
+  const { fullName, password, role } = parsed.data;
+
+  if (password && adminProfile.role !== "superadmin" && adminUser.id !== id) {
+    return NextResponse.json({ error: "You cannot change another user's password" }, { status: 403 });
+  }
+
+  if (password) {
+    const { error: passwordError } = await adminClient.auth.admin.updateUserById(id, { password });
+
+    if (passwordError) {
+      return NextResponse.json({ error: passwordError.message }, { status: 500 });
+    }
+  }
+
+  const profileUpdate: ProfileUpdate = {};
+  if (fullName !== undefined) profileUpdate.full_name = fullName;
+  if (role !== undefined) profileUpdate.role = role;
+
+  if (!Object.keys(profileUpdate).length) {
+    return NextResponse.json({ success: true });
+  }
+
+  // Use Admin Client to update profile (roles might need admin client if RLS is strict)
   const { data, error } = await adminClient
     .from("profiles")
-    .update({
-      full_name: parsed.data.fullName,
-      role: parsed.data.role,
-    })
+    .update(profileUpdate)
     .eq("id", id)
     .select()
     .single();

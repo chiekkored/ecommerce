@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
@@ -17,9 +16,10 @@ interface UserFormProps {
   user?: Profile;
   onSuccess?: () => void;
   formId?: string;
+  canChangePassword?: boolean;
 }
 
-export function UserForm({ user, onSuccess, formId }: UserFormProps) {
+export function UserForm({ user, onSuccess, formId, canChangePassword = false }: UserFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
@@ -27,13 +27,14 @@ export function UserForm({ user, onSuccess, formId }: UserFormProps) {
     register,
     handleSubmit,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<any>({
     resolver: zodResolver(user ? userUpdateSchema : userCreateSchema) as Resolver<any>,
     defaultValues: user
       ? {
           fullName: user.full_name ?? "",
           role: user.role ?? "staff",
+          password: "",
         }
       : {
           role: "staff",
@@ -101,6 +102,14 @@ export function UserForm({ user, onSuccess, formId }: UserFormProps) {
         </Select>
         {errors.role && <p className="text-xs text-destructive">{errors.role.message as string}</p>}
       </div>
+
+      {user && canChangePassword && (
+        <div className="space-y-1.5">
+          <Label htmlFor="password">New Password</Label>
+          <PasswordInput id="password" autoComplete="new-password" {...register("password")} />
+          {errors.password && <p className="text-xs text-destructive">{errors.password.message as string}</p>}
+        </div>
+      )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
     </form>
