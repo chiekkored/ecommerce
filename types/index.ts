@@ -8,4 +8,5 @@ export type {
   ListingWithPhotos,
   OrderRequestWithListing,
   Database,
+  ListingInventory,
 } from "./database";

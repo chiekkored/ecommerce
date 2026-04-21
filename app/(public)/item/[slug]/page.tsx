@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { ImageCarousel } from "@/components/catalog/ImageCarousel";
 import { createClient } from "@/lib/supabase/server";
 import type { Metadata } from "next";
-import type { Listing, ListingPhoto, Category } from "@/types";
+import type { Listing, ListingPhoto, Category, ListingInventory } from "@/types";
 
 type ListingFull = Listing & {
   listing_photos: ListingPhoto[];
@@ -22,11 +22,7 @@ interface Props {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("listings")
-    .select("title, description")
-    .eq("slug", slug)
-    .single();
+  const { data } = await supabase.from("listings").select("title, description").eq("slug", slug).single();
 
   if (!data) return { title: "Item Not Found" };
 
@@ -50,9 +46,7 @@ export default async function ItemPage({ params }: Props) {
   const listing = listingRaw as unknown as ListingFull | null;
   if (!listing) notFound();
 
-  const photos = [...(listing.listing_photos ?? [])].sort(
-    (a, b) => a.sort_order - b.sort_order
-  );
+  const photos = [...(listing.listing_photos ?? [])].sort((a, b) => a.sort_order - b.sort_order);
 
   const totalQuantity = listing.listing_inventory?.reduce((acc, item) => acc + item.quantity, 0) ?? 0;
 
@@ -63,17 +57,11 @@ export default async function ItemPage({ params }: Props) {
 
         <div className="space-y-6">
           <div className="space-y-2">
-            {listing.categories && (
-              <Badge variant="outline">{listing.categories.name}</Badge>
-            )}
+            {listing.categories && <Badge variant="outline">{listing.categories.name}</Badge>}
             <h1 className="text-2xl font-semibold leading-tight">{listing.title}</h1>
             <div className="flex items-center gap-3">
-              <span className="text-2xl font-bold">
-                ₱{listing.price.toLocaleString()}
-              </span>
-              {totalQuantity === 0 && (
-                <Badge variant="destructive">Sold Out</Badge>
-              )}
+              <span className="text-2xl font-bold">₱{listing.price.toLocaleString()}</span>
+              {totalQuantity === 0 && <Badge variant="destructive">Sold Out</Badge>}
             </div>
           </div>
 
@@ -82,11 +70,11 @@ export default async function ItemPage({ params }: Props) {
             <div className="flex flex-wrap gap-2">
               {listing.listing_inventory?.length > 0 ? (
                 listing.listing_inventory.map((item) => (
-                  <div 
-                    key={item.id} 
+                  <div
+                    key={item.id}
                     className={cn(
                       "px-3 py-1.5 rounded-md border text-sm flex flex-col items-center",
-                      item.quantity === 0 ? "opacity-50 bg-muted" : "bg-card"
+                      item.quantity === 0 ? "opacity-50 bg-muted" : "bg-card",
                     )}
                   >
                     <span className="font-bold">{item.size}</span>
@@ -104,9 +92,7 @@ export default async function ItemPage({ params }: Props) {
           {listing.description && (
             <div className="space-y-2 pt-2">
               <Label className="text-sm font-semibold">Description</Label>
-              <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-line">
-                {listing.description}
-              </p>
+              <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-line">{listing.description}</p>
             </div>
           )}
 
